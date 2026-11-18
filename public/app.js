@@ -67,15 +67,37 @@ function renderLogin() {
 function phoneStep() {
   $('#auth-step').innerHTML = `
     <label class="fl">Phone number</label>
-    <input class="field" id="a_phone" placeholder="+92 3XX XXXXXXX" value="+923001112233" autocomplete="tel">
-    <button class="btn btn-pri" id="a_send" style="width:100%;margin-top:16px">Send OTP</button>`;
+    <input class="field" id="a_phone" placeholder="+92 3XX XXXXXXX" value="+923009990001" autocomplete="tel">
+    <button class="btn btn-pri" id="a_send" style="width:100%;margin-top:16px">Send OTP</button>
+    <button class="linklike" id="a_admin" style="margin-top:14px">Admin? Email se login karein</button>`;
   $('#a_phone').onkeydown = (e) => { if (e.key === 'Enter') $('#a_send').click(); };
+  $('#a_admin').onclick = adminLoginStep;
   $('#a_send').onclick = async () => {
     const phone = $('#a_phone').value.trim();
     if (!phone) return toast('Enter a phone number');
     const r = await api.post('auth/request-otp', { phone });
     if (!r.ok) return toast('Could not send OTP');
     otpStep(phone, r.data.devCode);
+  };
+}
+// Admin signs in with email + password (owners use phone + OTP).
+function adminLoginStep() {
+  $('#auth-step').innerHTML = `
+    <label class="fl">Admin email</label>
+    <input class="field" id="ad_email" type="email" placeholder="admin@echodmc.com" autocomplete="username">
+    <label class="fl">Password</label>
+    <input class="field" id="ad_pass" type="password" placeholder="••••••••" autocomplete="current-password">
+    <button class="btn btn-pri" id="ad_in" style="width:100%;margin-top:16px">Sign in</button>
+    <button class="linklike" id="ad_back" style="margin-top:14px">← Owner login (phone)</button>`;
+  $('#ad_pass').onkeydown = (e) => { if (e.key === 'Enter') $('#ad_in').click(); };
+  $('#ad_back').onclick = phoneStep;
+  $('#ad_in').onclick = async () => {
+    const email = $('#ad_email').value.trim(), password = $('#ad_pass').value;
+    if (!email || !password) return toast('Email aur password daalein');
+    const r = await api.post('auth/admin-login', { email, password });
+    if (!r.ok) return toast(r.data.message || 'Login failed');
+    TOKEN = r.data.token; localStorage.setItem('vd_token', TOKEN);
+    await enterApp();
   };
 }
 function otpStep(phone, devCode) {

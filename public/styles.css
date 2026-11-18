@@ -212,6 +212,8 @@ textarea.field{height:auto;padding:9px 12px;resize:vertical;min-height:58px;line
 .auth-sub{font-size:12.5px;color:var(--muted);margin:5px 0 20px}
 .auth-card .fl{text-align:left}
 .auth-foot{font-size:11px;color:var(--muted2)}
+.linklike{background:none;border:none;color:var(--accent);font-size:12.5px;font-weight:550;width:100%;text-align:center;padding:5px;cursor:pointer}
+.linklike:hover{color:var(--accent-d);text-decoration:underline}
 .otp-input{text-align:center;font-size:24px;letter-spacing:.5em;font-weight:600;font-variant-numeric:tabular-nums}
 .devcode{margin-top:10px;font-size:12px;color:var(--muted);background:var(--hover);border:1px dashed var(--line);border-radius:8px;padding:8px}
 .devcode b{color:var(--accent);font-family:var(--mono);font-size:14px;letter-spacing:.1em}
