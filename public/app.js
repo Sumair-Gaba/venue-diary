@@ -2,9 +2,11 @@
 
 // ---- api + auth -----------------------------------------------------------
 let TOKEN = localStorage.getItem('vd_token') || null;
+let ADMIN_VENUE = null; // when an admin is viewing a specific banquet
 async function req(method, p, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (TOKEN) headers.Authorization = 'Bearer ' + TOKEN;
+  if (ADMIN_VENUE) headers['X-Venue-Id'] = String(ADMIN_VENUE);
   const r = await fetch('/api/' + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (r.status === 401 && !p.startsWith('auth/')) { logout(); throw new Error('unauthorized'); }
   const data = await r.json().catch(() => ({}));
@@ -35,6 +37,7 @@ const kpi = (icon, n, label) => `<div class="kpi"><div class="ico">${ic(icon)}</
 const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><span>${esc(text)}</span></div>`;
 
 let VENUE = null;
+let ME = null;
 let calState = { month: todayISO().slice(0, 7), hall: 1 };
 let listenerSet = false;
 
@@ -92,10 +95,14 @@ function otpStep(phone, devCode) {
     await enterApp();
   };
 }
-// Decide where to land after sign-in: onboarding (no venue yet) or the app.
+// Decide where to land after sign-in: admin panel, owner dashboard, or a
+// "not set up yet" notice for owners whose banquet the admin hasn't created.
 async function enterApp() {
+  ME = await api.get('me');
+  if (ME && ME.role === 'admin') { ADMIN_VENUE = null; return renderAdmin(); }
+  if (!ME || !ME.hasVenue) return renderNoVenue();
+  ADMIN_VENUE = null;
   VENUE = await api.get('venue');
-  if (VENUE && VENUE.needsOnboarding) return renderOnboarding(VENUE);
   startApp();
 }
 function logout() {
@@ -103,46 +110,79 @@ function logout() {
   location.hash = '#/home'; renderLogin();
 }
 
-// ---- onboarding (first sign-in: create your banquet) ----------------------
-function renderOnboarding(info) {
+// ---- ADMIN panel (platform/Echo DMC) --------------------------------------
+async function renderAdmin() {
   $('#app').hidden = true;
-  const facs = (info && info.all_facilities) || [];
-  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card onboard">
-    <div class="auth-logo">${ic('i-home')}</div>
-    <h2>Set up your banquet</h2>
-    <p class="auth-sub">Ek dafa ki setup — apne banquet ki tafseel bharein</p>
-    <div style="text-align:left">
-      <label class="fl">Your name</label><input class="field" id="o_owner" placeholder="Owner / manager name" value="${esc(info?.user?.name || '')}">
-      <label class="fl">Banquet name *</label><input class="field" id="o_name" placeholder="e.g. Royal Marquee">
-      <div class="two"><div><label class="fl">City</label><input class="field" id="o_city" placeholder="Lahore"></div>
-        <div><label class="fl">Area</label><input class="field" id="o_area" placeholder="Johar Town"></div></div>
-      <label class="fl">Address</label><input class="field" id="o_address" placeholder="Street, landmark">
-      <div class="two"><div><label class="fl">Phone</label><input class="field" id="o_phone" placeholder="+92 3XX XXXXXXX" value="${esc(info?.user?.phone || '')}"></div>
-        <div><label class="fl">Contact / WhatsApp</label><input class="field" id="o_phone2" placeholder="optional"></div></div>
-      <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="o_cmin" placeholder="200"></div>
-        <div><label class="fl">Max capacity</label><input class="field" type="number" id="o_cmax" placeholder="600"></div></div>
-      <label class="fl">Facilities</label><div class="chips" id="o_fac">${facs.map((f) => `<span class="chip" data-f="${esc(f)}">${esc(f)}</span>`).join('')}</div>
-      <button class="btn btn-pri" id="o_save" style="width:100%;margin-top:18px">${ic('i-check')}Create banquet</button>
-      <button class="btn btn-sec" id="o_logout" style="width:100%;margin-top:8px">Log out</button>
+  const list = await api.get('admin/venues');
+  $('#login').innerHTML = `<div class="admin-wrap">
+    <div class="admin-top">
+      <div class="brand"><span class="mk">${ic('i-cal')}</span><div><b>VENUE DIARY</b><span>ADMIN PANEL</span></div></div>
+      <div class="admin-actions">
+        <button class="btn btn-pri" id="ad_new">${ic('i-plus')}Register new banquet</button>
+        <button class="btn btn-sec" id="ad_logout">${ic('i-logout')}Log out</button>
+      </div>
     </div>
-  </div><div class="auth-foot">You can edit all of this later in Settings</div></div>`;
-  $('#o_fac').querySelectorAll('.chip').forEach((c) => c.onclick = () => c.classList.toggle('on'));
-  $('#o_logout').onclick = logout;
-  $('#o_save').onclick = async () => {
-    const name = $('#o_name').value.trim();
-    if (!name) return toast('Banquet name is required');
-    const facilities = [...$('#o_fac').querySelectorAll('.chip.on')].map((c) => c.dataset.f);
-    const ownerName = $('#o_owner').value.trim();
-    if (ownerName) await api.patch('me', { name: ownerName });
-    const r = await api.post('venue', {
-      name, city: $('#o_city').value.trim(), area: $('#o_area').value.trim(), address: $('#o_address').value.trim(),
-      phone: ($('#o_phone2').value.trim() || $('#o_phone').value.trim()),
-      capacity_min: Number($('#o_cmin').value) || null, capacity_max: Number($('#o_cmax').value) || null, facilities,
+    <div class="admin-body">
+      <div class="page-h"><div><h1>Banquets</h1><div class="sub">${list.length} registered</div></div></div>
+      <div class="admin-grid" id="ad_grid"></div>
+    </div></div>`;
+  $('#ad_logout').onclick = () => { if (confirm('Log out?')) logout(); };
+  $('#ad_new').onclick = registerBanquetModal;
+  $('#ad_grid').innerHTML = list.length ? list.map((v) => `
+    <div class="vcard">
+      <div class="vcard-h"><div class="vname">${esc(v.name)}</div><span class="pill p-confirmed"><span class="dt"></span>${v.hall_count} halls</span></div>
+      <div class="vmeta">${ic('i-home')} ${esc([v.city, v.area].filter(Boolean).join(', ') || '—')}</div>
+      <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
+      <div class="vmeta">${ic('i-book')} ${v.booking_count} bookings</div>
+      <button class="btn btn-sec btn-sm" data-open="${v.id}" style="margin-top:12px;width:100%">Open dashboard ${ic('i-chev-r')}</button>
+    </div>`).join('') : emptyState('i-home', 'Abhi koi banquet register nahi. "Register new banquet" dabayein.');
+  $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openBanquet(Number(b.dataset.open)));
+}
+async function openBanquet(id) {
+  ADMIN_VENUE = id;
+  VENUE = await api.get('venue');
+  if (!VENUE || VENUE.needsSelection) { ADMIN_VENUE = null; return toast('Could not open this banquet'); }
+  $('#login').innerHTML = '';
+  if (!location.hash || location.hash === '#/') location.hash = '#/home';
+  startApp();
+}
+function backToAdmin() { ADMIN_VENUE = null; VENUE = null; $('#app').hidden = true; renderAdmin(); }
+function registerBanquetModal() {
+  modal('Register new banquet', `
+    <label class="fl">Banquet name *</label><input class="field" id="rb_name" placeholder="e.g. Royal Marquee">
+    <div class="two"><div><label class="fl">Owner name</label><input class="field" id="rb_oname" placeholder="Owner / manager"></div>
+      <div><label class="fl">Owner phone *</label><input class="field" id="rb_ophone" placeholder="+92 3XX XXXXXXX"></div></div>
+    <div class="two"><div><label class="fl">City</label><input class="field" id="rb_city" placeholder="Lahore"></div>
+      <div><label class="fl">Area</label><input class="field" id="rb_area" placeholder="Johar Town"></div></div>
+    <label class="fl">Address</label><input class="field" id="rb_address" placeholder="Street, landmark">
+    <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="rb_cmin"></div>
+      <div><label class="fl">Max capacity</label><input class="field" type="number" id="rb_cmax"></div></div>
+    <div class="mono" style="margin-top:10px">Owner is apne phone (OTP) se login kar ke yeh dashboard dekhega.</div>`,
+    `<button class="btn btn-sec" id="rb_cancel">Cancel</button><button class="btn btn-pri" id="rb_save">${ic('i-check')}Register</button>`);
+  $('#rb_cancel').onclick = closeModal;
+  $('#rb_save').onclick = async () => {
+    const name = $('#rb_name').value.trim(), phone = $('#rb_ophone').value.trim();
+    if (!name) return toast('Banquet name required');
+    if (!phone) return toast('Owner phone required');
+    const r = await api.post('admin/venues', {
+      name, owner_name: $('#rb_oname').value.trim(), owner_phone: phone,
+      city: $('#rb_city').value.trim(), area: $('#rb_area').value.trim(), address: $('#rb_address').value.trim(),
+      capacity_min: Number($('#rb_cmin').value) || null, capacity_max: Number($('#rb_cmax').value) || null,
     });
-    if (!r.ok) return toast(r.data.message || 'Could not create banquet');
-    toast('Banquet created · welcome!');
-    await enterApp();
+    if (!r.ok) return toast(r.data.message || 'Could not register');
+    closeModal(); toast('Banquet registered'); renderAdmin();
   };
+}
+// Owner whose banquet the admin hasn't created yet.
+function renderNoVenue() {
+  $('#app').hidden = true;
+  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
+    <div class="auth-logo">${ic('i-home')}</div>
+    <h2>Account pending setup</h2>
+    <p class="auth-sub">Aapka banquet abhi register nahi hua. Admin (Echo DMC) se rabta karein — woh aapka dashboard bana kar denge.</p>
+    <button class="btn btn-sec" id="nv_logout" style="width:100%;margin-top:14px">Log out</button>
+  </div></div>`;
+  $('#nv_logout').onclick = logout;
 }
 
 // ---- router ---------------------------------------------------------------
@@ -678,7 +718,9 @@ function startApp() {
   $('#login').innerHTML = ''; $('#app').hidden = false;
   $('#brandVenue').textContent = VENUE.name;
   $('#newBtn').onclick = () => startNewBooking();
-  $('#logoutBtn').onclick = () => { if (confirm('Log out?')) logout(); };
+  const lb = $('#logoutBtn');
+  if (ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = backToAdmin; }
+  else lb.onclick = () => { if (confirm('Log out?')) logout(); };
   if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); }); listenerSet = true; }
   if (!location.hash) location.hash = '#/home';
   route();

@@ -216,6 +216,19 @@ textarea.field{height:auto;padding:9px 12px;resize:vertical;min-height:58px;line
 .devcode{margin-top:10px;font-size:12px;color:var(--muted);background:var(--hover);border:1px dashed var(--line);border-radius:8px;padding:8px}
 .devcode b{color:var(--accent);font-family:var(--mono);font-size:14px;letter-spacing:.1em}
 
+/* admin panel */
+.admin-wrap{min-height:100vh;background:var(--canvas)}
+.admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px clamp(16px,4vw,40px);background:var(--sidebar);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.admin-actions{display:flex;gap:10px;align-items:center}
+.admin-body{padding:28px clamp(16px,4vw,40px) 60px;max-width:1100px}
+.admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.vcard{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.vcard:hover{border-color:var(--muted2);box-shadow:var(--sh)}
+.vcard-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.vname{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.vmeta{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin-top:5px}
+.vmeta svg{width:14px;height:14px;color:var(--muted2);flex:none}
+
 /* settings tabs */
 .tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--line)}
 .tab{background:none;border:none;padding:9px 12px;font-size:13.5px;font-weight:550;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}

@@ -46,6 +46,7 @@ http.createServer(async (req, res) => {
       const body = (req.method === 'POST' || req.method === 'PATCH') ? await readBody(req) : {};
       const h = req.headers['authorization'] || '';
       body.__token = h.startsWith('Bearer ') ? h.slice(7) : null;
+      body.__venueOverride = req.headers['x-venue-id'] || null;
       const segs = url.pathname.replace(/^\/api\//, '').split('/').filter(Boolean);
       const { status, data } = await handleApi({ method: req.method, segs, query: url.searchParams, body });
       return sendJson(res, status, data);

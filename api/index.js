@@ -25,6 +25,7 @@ export default async function handler(req, res) {
 
     const h = req.headers['authorization'] || '';
     body.__token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    body.__venueOverride = req.headers['x-venue-id'] || null;
 
     const { status, data } = await handleApi({ method: req.method, segs, query: url.searchParams, body });
     res.status(status).json(data);
