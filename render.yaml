@@ -1,0 +1,14 @@
+# Render deploy config for Venue Diary (owner web dashboard).
+# Free web service. Note: the free tier's disk is ephemeral, so the SQLite
+# database resets (and re-seeds demo data) on each deploy/restart — fine for a
+# demo. For persistent data, move to a paid disk or PostgreSQL later.
+services:
+  - type: web
+    name: venue-diary
+    runtime: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    envVars:
+      - key: NODE_VERSION
+        value: "24"

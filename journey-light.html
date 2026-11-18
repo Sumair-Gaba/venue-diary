@@ -1,0 +1,505 @@
+<title>Venue Diary — Booking Journey</title>
+<style>
+  :root{
+    --cream:#FBF7F2; --ivory:#FDFBF8; --paper:#FFFFFF;
+    --plum:#4A2B34; --plum2:#7A5A62; --mauve:#A48D93; --mauve2:#C9B8BC;
+    --line:#F0E6DF; --line2:#F6EFE9;
+    --rose:#C97B84; --rose-d:#A85863; --rose-l:#F7E7E8; --blush:#E8B4B8;
+    --gold:#BE9B54; --gold-l:#F4ECD8; --gold-soft:#D9BE7E;
+    --sage:#7E9A7B; --sage-d:#5F7A5D; --sage-l:#EAF0E7;
+    --serif:"Hoefler Text",Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --shadow:0 2px 5px rgba(74,43,52,.04),0 16px 36px -16px rgba(74,43,52,.16);
+    --shadow-sm:0 1px 3px rgba(74,43,52,.05),0 8px 20px -14px rgba(74,43,52,.18);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;font-family:var(--sans);color:var(--plum);
+    background:
+      radial-gradient(60% 50% at 12% 6%, rgba(232,180,184,.42), transparent 58%),
+      radial-gradient(55% 45% at 92% 12%, rgba(201,169,106,.26), transparent 60%),
+      radial-gradient(60% 55% at 85% 96%, rgba(126,154,123,.26), transparent 60%),
+      radial-gradient(50% 50% at 6% 92%, rgba(232,180,184,.24), transparent 60%),
+      var(--cream);
+    background-attachment:fixed;min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1300px;margin:0 auto;padding:clamp(34px,5vw,72px) 22px 90px}
+
+  /* hero */
+  .hero{max-width:730px;margin-bottom:8px}
+  .brand{display:flex;align-items:center;gap:13px;margin-bottom:28px}
+  .mark{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;
+    background:linear-gradient(145deg,#fff,var(--rose-l));border:1px solid var(--line);
+    box-shadow:var(--shadow-sm)}
+  .mark svg{width:25px;height:25px;color:var(--rose-d)}
+  .brand b{font-family:var(--serif);font-size:21px;font-weight:600;letter-spacing:.01em;color:var(--plum)}
+  .brand span{display:block;font-size:10.5px;color:var(--mauve);letter-spacing:.16em;text-transform:uppercase;margin-top:3px}
+  .eyebrow{font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--rose-d);font-weight:650;margin:0 0 14px}
+  h1{font-family:var(--serif);font-size:clamp(33px,5.4vw,60px);line-height:1.04;letter-spacing:-.01em;font-weight:600;margin:0 0 16px;text-wrap:balance}
+  h1 em{font-style:italic;color:var(--rose-d)}
+  .hero p{font-size:clamp(15px,2vw,18px);color:var(--plum2);line-height:1.62;max-width:60ch;margin:0}
+  .legend{display:flex;flex-wrap:wrap;gap:9px 20px;margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}
+  .lg{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--plum2)}
+  .lg .s{width:16px;height:16px;border-radius:6px;flex:none}
+  .s-conf{background:var(--sage)} .s-tent{border:2px solid var(--gold);background:transparent}
+  .s-block{background:var(--mauve2)} .s-free{border:2px solid var(--line);background:#fff}
+
+  /* journey */
+  .journey{display:flex;align-items:flex-start;overflow-x:auto;padding:48px 4px 34px;
+    scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:var(--blush) transparent}
+  .journey::-webkit-scrollbar{height:9px}
+  .journey::-webkit-scrollbar-thumb{background:var(--blush);border-radius:9px}
+  .journey::-webkit-scrollbar-track{background:rgba(74,43,52,.05);border-radius:9px}
+
+  .step{flex:none;width:294px;scroll-snap-align:center;display:flex;flex-direction:column}
+  .step-head{min-height:120px;padding:0 6px 22px}
+  .stepno{font-family:var(--serif);font-size:13px;color:var(--rose-d);letter-spacing:.1em;display:inline-flex;align-items:center;gap:9px;margin-bottom:9px}
+  .stepno::before{content:"";width:26px;height:1.5px;background:linear-gradient(90deg,var(--rose),transparent)}
+  .step-head h3{font-size:17px;font-weight:680;letter-spacing:-.01em;margin:0 0 5px}
+  .step-head p{font-size:12.5px;color:var(--plum2);line-height:1.5;margin:0}
+
+  .link{flex:none;width:56px;display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:422px}
+  .link .node{width:9px;height:9px;border-radius:50%;background:var(--rose);box-shadow:0 0 0 4px var(--rose-l)}
+  .link svg{width:32px;height:10px;color:var(--rose)}
+  .link span{font-family:var(--mono);font-size:9.5px;color:var(--plum2);text-align:center;max-width:58px;line-height:1.35}
+
+  /* phone */
+  .phone{width:292px;background:#fff;border-radius:44px;padding:9px;position:relative;
+    border:1px solid var(--line);
+    box-shadow:0 2px 3px rgba(74,43,52,.05),0 40px 70px -34px rgba(74,43,52,.4),0 0 0 7px rgba(255,255,255,.6)}
+  .screen{position:relative;border-radius:36px;overflow:hidden;height:612px;display:flex;flex-direction:column;background:var(--ivory)}
+  .island{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:84px;height:23px;background:#2a1b20;border-radius:999px;z-index:40}
+  .stat{display:flex;justify-content:space-between;align-items:center;padding:12px 22px 4px;font-size:12.5px;font-weight:650;color:var(--plum);z-index:30}
+  .stat .r{display:flex;gap:6px;align-items:center}.stat svg{width:15px;height:15px}
+  .view{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .scroll{flex:1;overflow:hidden;padding:4px 15px 14px}
+
+  .ahead{display:flex;align-items:center;gap:11px;padding:8px 15px 12px}
+  .ic-btn{width:38px;height:38px;border-radius:13px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;color:var(--plum);position:relative;box-shadow:var(--shadow-sm)}
+  .ic-btn svg{width:18px;height:18px}
+  .bdg{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--rose);border:2px solid #fff}
+  .grow{flex:1;min-width:0}
+  .hi{font-size:11.5px;color:var(--mauve)} .vn{font-family:var(--serif);font-size:17px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ttl{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:-.01em} .sub{font-size:11.5px;color:var(--mauve)}
+  .avatar{border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700;color:#fff;width:40px;height:40px;font-size:14px;box-shadow:var(--shadow-sm)}
+  .av-r{background:linear-gradient(145deg,var(--blush),var(--rose-d))}
+  .av-g{background:linear-gradient(145deg,var(--gold-soft),var(--gold))}
+  .av-s{background:linear-gradient(145deg,#A8C0A5,var(--sage-d))}
+
+  /* today hero card — soft romantic imagery */
+  .today{position:relative;border-radius:24px;padding:20px;overflow:hidden;color:#FFF4F2;
+    background:
+      radial-gradient(90% 120% at 10% 0%, rgba(255,255,255,.28), transparent 45%),
+      radial-gradient(80% 100% at 100% 100%, rgba(190,155,84,.55), transparent 55%),
+      linear-gradient(145deg,var(--rose) 0%,var(--rose-d) 58%,#7E3C47 100%);
+    box-shadow:0 20px 40px -20px rgba(168,88,99,.7)}
+  .today .lbl{font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,244,242,.85);font-weight:650}
+  .today .big{font-family:var(--serif);font-size:33px;font-weight:600;margin:5px 0 2px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .today .big span{font-size:15px;opacity:.8;font-family:var(--sans)}
+  .today .meta{font-size:12px;color:rgba(255,244,242,.82)}
+  .today .split{display:flex;gap:9px;margin-top:16px}
+  .today .mini{flex:1;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);border-radius:13px;padding:9px 10px;backdrop-filter:blur(3px)}
+  .today .mini .n{font-family:var(--serif);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+  .today .mini .t{font-size:9px;letter-spacing:.04em;opacity:.85;margin-top:1px}
+
+  .sec-h{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 10px}
+  .sec-h h4{font-size:13px;font-weight:700;margin:0;letter-spacing:-.01em} .sec-h a{font-size:11.5px;color:var(--rose-d);font-weight:650}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-sm)}
+  .evt{display:flex;align-items:center;gap:11px;padding:11px 12px}
+  .evt+.evt{border-top:1px solid var(--line2)}
+  .evt .nm{font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .evt .dt{font-size:11px;color:var(--mauve);margin-top:1px}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .pill .dt{width:6px;height:6px;border-radius:50%}
+  .p-conf{background:var(--sage-l);color:var(--sage-d)} .p-conf .dt{background:var(--sage)}
+  .p-tent{border:1.5px solid var(--gold);color:var(--gold)} .p-tent .dt{background:var(--gold)}
+  .p-block{background:#F0EBE8;color:var(--mauve)} .p-block .dt{background:var(--mauve2)}
+  .p-free{border:1.5px solid var(--line);color:var(--plum2)} .p-free .dt{background:var(--mauve2)}
+
+  .fab{position:absolute;right:15px;bottom:84px;height:51px;padding:0 20px;border-radius:17px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650;color:#fff;z-index:25;
+    background:linear-gradient(145deg,var(--rose),var(--rose-d));box-shadow:0 16px 30px -12px rgba(168,88,99,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+  .fab svg{width:18px;height:18px}
+  .nav{display:flex;padding:9px 8px 20px;background:rgba(255,255,255,.85);border-top:1px solid var(--line);backdrop-filter:blur(10px)}
+  .nav .n{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:600;color:var(--mauve)}
+  .nav .n svg{width:21px;height:21px} .nav .n.on{color:var(--rose-d)}
+
+  /* calendar */
+  .monthbar{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 13px}
+  .monthbar .m{font-family:var(--serif);font-size:18px;font-weight:600}
+  .hallf{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;color:var(--rose-d);background:var(--rose-l);padding:6px 12px;border-radius:999px}
+  .hallf svg{width:13px;height:13px}
+  .cal{background:#fff;border:1px solid var(--line);border-radius:20px;padding:15px 12px;box-shadow:var(--shadow-sm)}
+  .cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cgrid .wd{font-size:9.5px;font-weight:700;color:var(--mauve);text-align:center;padding-bottom:7px;text-transform:uppercase;letter-spacing:.05em}
+  .cgrid .d{aspect-ratio:1;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:650;color:var(--plum2);font-variant-numeric:tabular-nums}
+  .cgrid .d.mut{color:var(--mauve2)}
+  .cgrid .d.conf{background:var(--sage);color:#fff;box-shadow:0 5px 12px -5px rgba(126,154,123,.8)}
+  .cgrid .d.tent{color:var(--gold);box-shadow:inset 0 0 0 1.5px var(--gold)}
+  .cgrid .d.block{background:#F0EBE8;color:var(--mauve)}
+  .cgrid .d.sel{background:var(--rose);color:#fff;box-shadow:0 5px 12px -5px rgba(201,123,132,.8)}
+  .cgrid .d.today{box-shadow:inset 0 0 0 1.5px var(--rose)}
+
+  .daysum{margin-top:16px;display:flex;flex-direction:column;gap:9px}
+  .dh{font-family:var(--serif);font-size:14px;font-weight:600;padding-left:2px}
+  .slotrow{display:flex;align-items:center;gap:11px;padding:12px;border-radius:15px;border:1px solid var(--line);background:#fff;box-shadow:var(--shadow-sm)}
+  .slotrow.pick{border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-l)}
+  .slotrow .ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--rose-l);color:var(--rose-d)}
+  .slotrow .ico svg{width:16px;height:16px}
+  .slotrow .s1{font-size:13px;font-weight:650} .slotrow .s2{font-size:11px;color:var(--mauve);margin-top:1px}
+
+  /* form */
+  .flabel{font-size:10px;font-weight:700;color:var(--mauve);letter-spacing:.07em;text-transform:uppercase;margin:13px 2px 6px}
+  .input{display:flex;align-items:center;gap:10px;height:49px;padding:0 13px;border-radius:14px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-sm)}
+  .input svg{width:17px;height:17px;color:var(--mauve)} .input .tx{font-size:14px;font-weight:650} .input .tx.ph{color:var(--mauve);font-weight:500}
+  .input.focus{border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-l)}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-size:12.5px;font-weight:650;padding:8px 13px;border-radius:12px;color:var(--plum2);background:#fff;border:1px solid var(--line)}
+  .chip.on{color:#fff;background:linear-gradient(145deg,var(--rose),var(--rose-d));border-color:transparent;box-shadow:0 8px 18px -8px rgba(168,88,99,.5)}
+  .two{display:flex;gap:9px}.two>*{flex:1}
+  .totbox{display:flex;justify-content:space-between;align-items:center;margin-top:15px;padding:14px 16px;border-radius:15px;
+    background:linear-gradient(140deg,var(--gold-l),#FBF4E3);border:1px solid #EADFC2}
+  .totbox .k{font-size:11px;color:#9A8347;font-weight:650} .totbox .v{font-family:var(--serif);font-size:22px;font-weight:600;color:#8A6E2E;font-variant-numeric:tabular-nums}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;height:49px;border-radius:15px;font-size:14px;font-weight:700;letter-spacing:-.01em}
+  .btn svg{width:17px;height:17px}
+  .btn.pri{color:#fff;background:linear-gradient(145deg,var(--rose),var(--rose-d));box-shadow:0 16px 28px -14px rgba(168,88,99,.55),inset 0 1px 0 rgba(255,255,255,.35)}
+  .btn.sec{color:var(--rose-d);background:var(--rose-l);border:1px solid transparent}
+  .btn.ghost{color:var(--plum2);background:#fff;border:1px solid var(--line);height:45px;font-size:13px}
+  .btn.danger{color:#B2524B;background:#F7E7E5}
+  .stickybar{display:flex;gap:9px;padding:12px 15px 20px;background:rgba(255,255,255,.88);border-top:1px solid var(--line);backdrop-filter:blur(10px)}
+  .stickybar .btn{flex:1;height:47px}
+  .row2{display:flex;gap:9px}.row2 .btn{flex:1}
+
+  .review{background:#fff;border:1px solid var(--line);border-radius:18px;padding:4px 15px;box-shadow:var(--shadow-sm)}
+  .rr{display:flex;justify-content:space-between;align-items:center;padding:11px 0;font-size:13px}
+  .rr+.rr{border-top:1px solid var(--line2)} .rr .k{color:var(--mauve)} .rr .v{font-weight:650;font-variant-numeric:tabular-nums}
+  .okslot{display:flex;align-items:center;gap:8px;margin-top:13px;padding:11px 13px;border-radius:14px;background:var(--sage-l);color:var(--sage-d);font-size:12px;font-weight:650}
+  .okslot svg{width:16px;height:16px}
+
+  /* success */
+  .succ{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:5px}
+  .seal{width:94px;height:94px;border-radius:50%;display:grid;place-items:center;margin-bottom:12px;color:#fff;
+    background:linear-gradient(145deg,#A8C0A5,var(--sage-d));box-shadow:0 18px 40px -12px rgba(95,122,93,.7),inset 0 2px 0 rgba(255,255,255,.4)}
+  .seal svg{width:44px;height:44px}
+  .succ h2{font-family:var(--serif);font-size:24px;font-weight:600;margin:4px 0 0}
+  .succ .wa{display:flex;align-items:center;gap:8px;color:var(--sage-d);font-size:12.5px;font-weight:650;margin-top:5px}
+  .succ .wa svg{width:17px;height:17px}
+  .succ p{font-size:13px;color:var(--plum2);line-height:1.5;margin:7px 0 0;max-width:30ch}
+  .succ .mini-sum{margin-top:18px;width:100%;background:#fff;border:1px solid var(--line);border-radius:15px;padding:13px 15px;text-align:left;box-shadow:var(--shadow-sm)}
+  .succ .mini-sum .l{display:flex;justify-content:space-between;font-size:12px;padding:4px 0}
+  .succ .mini-sum .l .k{color:var(--mauve)}
+
+  /* detail */
+  .party{display:flex;align-items:center;gap:12px;padding:4px 2px 13px}
+  .party .pn{font-family:var(--serif);font-size:21px;font-weight:600;letter-spacing:-.01em} .party .pm{font-size:12px;color:var(--mauve);margin-top:2px}
+  .chipline{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 13px}
+  .mchip{font-size:11px;font-weight:650;color:var(--plum2);background:#fff;border:1px solid var(--line);padding:5px 10px;border-radius:10px;display:inline-flex;gap:5px;align-items:center;box-shadow:var(--shadow-sm)}
+  .mchip svg{width:12px;height:12px;color:var(--rose-d)}
+  .wabar{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:13px;background:var(--sage-l);color:var(--sage-d);font-size:12px;font-weight:650;margin-bottom:13px}
+  .wabar svg{width:17px;height:17px}
+  .paycard{background:linear-gradient(155deg,#fff,#FFFaf6);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+  .pr{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;font-variant-numeric:tabular-nums}
+  .pr .k{font-size:12.5px;color:var(--plum2)} .pr .v{font-size:14px;font-weight:650}
+  .pr.tot{border-top:1px dashed var(--line);margin-top:6px;padding-top:11px}
+  .pr.tot .k{font-size:13px;font-weight:700} .pr.tot .v{font-family:var(--serif);font-size:21px;font-weight:600;color:#8A6E2E}
+  .bar{height:8px;border-radius:999px;background:#F0EBE8;overflow:hidden;margin:12px 0 4px}
+  .bar>i{display:block;height:100%;width:32%;border-radius:999px;background:linear-gradient(90deg,var(--gold),var(--gold-soft))}
+  .barlbl{display:flex;justify-content:space-between;font-size:10px;color:var(--mauve);font-weight:650}
+  .acts{display:flex;flex-direction:column;gap:9px;margin-top:15px}
+
+  .foot{margin-top:42px;color:var(--plum2);font-size:14px;max-width:72ch;line-height:1.65;border-top:1px solid var(--line);padding-top:24px}
+  .foot b{color:var(--plum)} .foot code{font-family:var(--mono);font-size:12.5px;background:var(--rose-l);padding:2px 6px;border-radius:5px;color:var(--rose-d)}
+  svg{display:block}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="17" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 7h7M8 11h7"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18M16 15h2"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></symbol>
+  <symbol id="i-wa" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.3A10 10 0 1 0 12 2m0 2a8 8 0 0 1 6.8 12.2.9.9 0 0 0-.1.8l.5 1.8-1.9-.5a.9.9 0 0 0-.7.1A8 8 0 1 1 12 4m-3 4c-.3 0-.6.1-.8.4-.3.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.7 2.8 4.3 3.8 2.1.8 2.5.7 3 .6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2 0-.1-.3-.2-.6-.4-.3-.1-1.5-.8-1.8-.9-.2-.1-.4-.1-.6.1-.2.3-.6.9-.8 1-.1.2-.3.2-.5.1-.3-.2-1.1-.4-2-1.3-.8-.7-1.3-1.5-1.4-1.8-.2-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5 0-.2 0-.4-.1-.5-.1-.2-.6-1.4-.8-1.9-.2-.5-.4-.4-.6-.4z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5c0 8 7 15 15 15l2.5-3.5-4-2.5-2 1.5c-2-1-4-3-5-5l1.5-2L11 4 7.5 4z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5"/><path d="M16 5.2A3.4 3.4 0 0 1 16 12M18 20c0-2.2-.8-3.7-2-4.6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></symbol>
+  <symbol id="i-moon2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9c-5 0-9-4-9-9z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24" fill="currentColor"><path d="M12 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4M5 11.5l2 2a7 7 0 0 1 10 0l2-2a10 10 0 0 0-14 0M1.5 8l2 2a12 12 0 0 1 17 0l2-2a15 15 0 0 0-21 0"/></symbol>
+  <symbol id="i-sig" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="14" width="3" height="7" rx="1"/><rect x="7.5" y="10" width="3" height="11" rx="1"/><rect x="13" y="6" width="3" height="15" rx="1"/><rect x="18.5" y="2" width="3" height="19" rx="1"/></symbol>
+  <symbol id="i-batt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="7" width="18" height="10" rx="2.5"/><rect x="4" y="9" width="11" height="6" rx="1" fill="currentColor" stroke="none"/><path d="M22 10v4" stroke-linecap="round"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="brand">
+      <span class="mark"><svg><use href="#i-cal"/></svg></span>
+      <div><b>Venue Diary</b><span>Owner app</span></div>
+    </div>
+    <p class="eyebrow">User journey · Nayi booking</p>
+    <h1>Ek booking, <em>shuru se confirm tak</em> — aath qadam.</h1>
+    <p>App kholne se le kar customer ko WhatsApp confirmation jaane tak — poora flow, har screen juda hua.
+      Soft, elegant light theme: ivory, blush rose, champagne gold aur sage — shaadi ki khoobsurti.</p>
+    <div class="legend">
+      <span class="lg"><span class="s s-free"></span>Khali</span>
+      <span class="lg"><span class="s s-tent"></span>Tentative</span>
+      <span class="lg"><span class="s s-conf"></span>Confirmed</span>
+      <span class="lg"><span class="s s-block"></span>Blocked</span>
+    </div>
+  </header>
+
+  <div class="journey">
+
+    <!-- 01 SPLASH -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">01</span><h3>App khuli</h3><p>Owner subah app kholta hai — seedha apni diary par.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:41</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view"><div class="succ" style="gap:14px">
+          <div class="seal" style="background:linear-gradient(145deg,var(--blush),var(--rose-d))"><svg style="width:42px;height:42px"><use href="#i-cal"/></svg></div>
+          <div><div style="font-family:var(--serif);font-size:28px;font-weight:600">Venue Diary</div>
+            <div style="font-size:11px;color:var(--mauve);letter-spacing:.16em;text-transform:uppercase;margin-top:7px">Aapki booking diary</div></div>
+          <div style="margin-top:16px;width:46px;height:3px;border-radius:3px;background:linear-gradient(90deg,transparent,var(--rose),transparent)"></div>
+        </div></div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>app load</span></div>
+
+    <!-- 02 HOME -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">02</span><h3>Home dashboard</h3><p>Aaj ke events aur baqaya saamne. "Nayi booking" tap karta hai.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:41</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view">
+          <div class="ahead">
+            <div class="avatar av-r">SG</div>
+            <div class="grow"><div class="hi">Assalam o Alaikum</div><div class="vn">Shalimar Grand</div></div>
+            <div class="ic-btn"><svg><use href="#i-bell"/></svg><span class="bdg"></span></div>
+          </div>
+          <div class="scroll">
+            <div class="today">
+              <div class="lbl">Aaj · Mangal, 18 Nov</div>
+              <div class="big">Rs 4,20,000 <span>baqaya</span></div>
+              <div class="meta">3 customers · 2 events aaj</div>
+              <div class="split">
+                <div class="mini"><div class="n">2</div><div class="t">AAJ EVENTS</div></div>
+                <div class="mini"><div class="n">7</div><div class="t">IS HAFTE</div></div>
+                <div class="mini"><div class="n">78%</div><div class="t">OCCUPANCY</div></div>
+              </div>
+            </div>
+            <div class="sec-h"><h4>Aaj ke events</h4><a>Sab</a></div>
+            <div class="card">
+              <div class="evt"><div class="avatar av-g" style="width:38px;height:38px">KF</div>
+                <div class="grow"><div class="nm">Khan family · Walima</div><div class="dt">Grand Hall · 650</div></div>
+                <span class="pill p-conf"><span class="dt"></span>Dinner</span></div>
+              <div class="evt"><div class="avatar av-s" style="width:38px;height:38px">BF</div>
+                <div class="grow"><div class="nm">Butt family · Mehndi</div><div class="dt">Lawn · 300</div></div>
+                <span class="pill p-conf"><span class="dt"></span>Lunch</span></div>
+            </div>
+          </div>
+          <div class="fab"><svg><use href="#i-plus"/></svg>Nayi booking</div>
+          <div class="nav">
+            <div class="n on"><svg><use href="#i-cal"/></svg>Calendar</div>
+            <div class="n"><svg><use href="#i-book"/></svg>Bookings</div>
+            <div class="n"><svg><use href="#i-wallet"/></svg>Payments</div>
+            <div class="n"><svg><use href="#i-more"/></svg>More</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>calendar khula</span></div>
+
+    <!-- 03 CALENDAR -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">03</span><h3>Calendar</h3><p>Rang se har din ka status. Owner 26 November par tap karta hai.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:42</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view">
+          <div class="ahead"><div class="grow"><div class="ttl">Calendar</div></div><div class="ic-btn"><svg><use href="#i-bell"/></svg></div></div>
+          <div class="scroll">
+            <div class="monthbar"><span class="m">November 2026</span><span class="hallf"><svg><use href="#i-users"/></svg>Grand Hall</span></div>
+            <div class="cal"><div class="cgrid">
+              <span class="wd">S</span><span class="wd">M</span><span class="wd">T</span><span class="wd">W</span><span class="wd">T</span><span class="wd">F</span><span class="wd">S</span>
+              <span class="d mut">26</span><span class="d mut">27</span><span class="d mut">28</span><span class="d mut">29</span><span class="d mut">30</span><span class="d mut">31</span><span class="d">1</span>
+              <span class="d">2</span><span class="d conf">3</span><span class="d">4</span><span class="d tent">5</span><span class="d">6</span><span class="d">7</span><span class="d conf">8</span>
+              <span class="d">9</span><span class="d">10</span><span class="d block">11</span><span class="d">12</span><span class="d conf">13</span><span class="d">14</span><span class="d conf">15</span>
+              <span class="d">16</span><span class="d">17</span><span class="d today">18</span><span class="d">19</span><span class="d tent">20</span><span class="d">21</span><span class="d conf">22</span>
+              <span class="d">23</span><span class="d">24</span><span class="d">25</span><span class="d sel">26</span><span class="d">27</span><span class="d conf">28</span><span class="d">29</span>
+            </div></div>
+            <div class="daysum">
+              <div class="dh">Budh · 26 Nov</div>
+              <div class="slotrow"><div class="ico"><svg><use href="#i-sun"/></svg></div>
+                <div class="grow"><div class="s1">Lunch</div><div class="s2">Khali</div></div><span class="pill p-free"><span class="dt"></span>Khali</span></div>
+              <div class="slotrow"><div class="ico"><svg><use href="#i-moon2"/></svg></div>
+                <div class="grow"><div class="s1">Dinner</div><div class="s2">Malik · Barat · 450</div></div><span class="pill p-conf"><span class="dt"></span>Confirmed</span></div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="n on"><svg><use href="#i-cal"/></svg>Calendar</div>
+            <div class="n"><svg><use href="#i-book"/></svg>Bookings</div>
+            <div class="n"><svg><use href="#i-wallet"/></svg>Payments</div>
+            <div class="n"><svg><use href="#i-more"/></svg>More</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>26 Nov tap</span></div>
+
+    <!-- 04 DAY / SLOT -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">04</span><h3>Din ke slots</h3><p>Dinner bhara hai, Lunch khali. Owner Lunch chunta hai.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:42</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view">
+          <div class="ahead"><div class="ic-btn"><svg><use href="#i-chev"/></svg></div>
+            <div class="grow"><div class="ttl">Budh, 26 Nov</div><div class="sub">Grand Hall</div></div></div>
+          <div class="scroll">
+            <div class="daysum" style="margin-top:4px">
+              <div class="slotrow pick"><div class="ico"><svg><use href="#i-sun"/></svg></div>
+                <div class="grow"><div class="s1">Lunch</div><div class="s2">Khali — is slot par book karein</div></div><span class="pill p-conf"><span class="dt"></span>Chuna</span></div>
+              <div class="slotrow"><div class="ico" style="background:#F0EBE8;color:var(--mauve)"><svg><use href="#i-moon2"/></svg></div>
+                <div class="grow"><div class="s1">Dinner</div><div class="s2">Malik family · Barat · 450 mehmaan</div></div><span class="pill p-block"><span class="dt"></span>Bhara</span></div>
+            </div>
+            <div style="margin-top:16px;padding:14px;border-radius:14px;border:1px solid var(--line);background:#fff;font-size:11.5px;color:var(--plum2);line-height:1.5;box-shadow:var(--shadow-sm)">
+              Lunch slot khali hai. Aage barhne par is din aur slot ki booking banegi.</div>
+          </div>
+          <div class="stickybar"><div class="btn pri" style="width:100%"><svg><use href="#i-plus"/></svg>Is slot par booking</div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>Lunch chuna</span></div>
+
+    <!-- 05 FORM -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">05</span><h3>Booking form</h3><p>Customer, event, mehmaan. Total khud ban jaata hai.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:43</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view">
+          <div class="ahead"><div class="ic-btn"><svg><use href="#i-chev"/></svg></div>
+            <div class="grow"><div class="ttl">Nayi booking</div><div class="sub">Grand Hall · Lunch · 26 Nov</div></div></div>
+          <div class="scroll">
+            <div class="flabel">Customer</div>
+            <div class="input focus"><svg><use href="#i-user"/></svg><span class="tx">Sheikh Imran</span></div>
+            <div class="flabel">Phone</div>
+            <div class="input"><svg><use href="#i-phone"/></svg><span class="tx">+92 300 1234567</span></div>
+            <div class="flabel">Event</div>
+            <div class="chips"><span class="chip">Mehndi</span><span class="chip on">Barat</span><span class="chip">Walima</span><span class="chip">Nikah</span></div>
+            <div class="flabel">Mehmaan · Rate</div>
+            <div class="two"><div class="input"><svg><use href="#i-users"/></svg><span class="tx">450</span></div>
+              <div class="input"><span class="tx">Rs 2,800</span></div></div>
+            <div class="totbox"><div class="k">Total (450 × 2,800)</div><div class="v">Rs 12,60,000</div></div>
+          </div>
+          <div class="stickybar"><div class="btn pri" style="width:100%">Aage · review</div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>details bhari</span></div>
+
+    <!-- 06 CONFIRM -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">06</span><h3>Review &amp; confirm</h3><p>System slot dubara check karta hai — khali. Owner confirm karta hai.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:43</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view">
+          <div class="ahead"><div class="ic-btn"><svg><use href="#i-chev"/></svg></div><div class="grow"><div class="ttl">Confirm karein</div></div></div>
+          <div class="scroll">
+            <div class="party" style="padding-top:0">
+              <div class="avatar av-s" style="width:46px;height:46px;font-size:15px">SI</div>
+              <div><div class="pn" style="font-size:18px">Sheikh Imran</div><div class="pm">Barat · 450 mehmaan</div></div>
+            </div>
+            <div class="review">
+              <div class="rr"><span class="k">Tareekh</span><span class="v">26 Nov 2026</span></div>
+              <div class="rr"><span class="k">Slot</span><span class="v">Lunch</span></div>
+              <div class="rr"><span class="k">Hall</span><span class="v">Grand Hall</span></div>
+              <div class="rr"><span class="k">Total</span><span class="v">Rs 12,60,000</span></div>
+              <div class="rr"><span class="k">Advance</span><span class="v">Rs 4,00,000</span></div>
+            </div>
+            <div class="okslot"><svg><use href="#i-check"/></svg>Slot khali hai — double-booking nahi</div>
+          </div>
+          <div class="stickybar"><div class="btn sec">Tentative</div><div class="btn pri"><svg><use href="#i-check"/></svg>Confirm</div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>confirm dabaya</span></div>
+
+    <!-- 07 SUCCESS -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">07</span><h3>Confirmed · WhatsApp</h3><p>Booking save, customer ko WhatsApp par confirmation chala jaata hai.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:43</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view"><div class="succ">
+          <div class="seal"><svg><use href="#i-check"/></svg></div>
+          <h2>Booking confirmed</h2>
+          <div class="wa"><svg><use href="#i-wa"/></svg>WhatsApp Sheikh Imran ko bheja</div>
+          <p>Venue, tareekh, advance aur baqaya ka message chala gaya.</p>
+          <div class="mini-sum">
+            <div class="l"><span class="k">Sheikh Imran · Barat</span><span>26 Nov</span></div>
+            <div class="l"><span class="k">Baqaya</span><span style="color:#8A6E2E;font-weight:700">Rs 8,60,000</span></div>
+          </div>
+          <div class="btn pri" style="width:100%;margin-top:16px">Booking dekhein</div>
+        </div></div>
+      </div></div>
+    </div>
+
+    <div class="link"><span class="node"></span><svg><use href="#i-chev" transform="scale(-1,1) translate(-24,0)"/></svg><span>ho gaya</span></div>
+
+    <!-- 08 DETAIL -->
+    <div class="step">
+      <div class="step-head"><span class="stepno">08</span><h3>Booking detail</h3><p>Final record — paisa, WhatsApp status aur aage ke actions.</p></div>
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="stat"><span>9:44</span><span class="r"><svg><use href="#i-sig"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-batt"/></svg></span></div>
+        <div class="view">
+          <div class="ahead"><div class="ic-btn"><svg><use href="#i-chev"/></svg></div>
+            <div class="grow"><div class="ttl">Booking #1043</div></div>
+            <span class="pill p-conf"><span class="dt"></span>Confirmed</span></div>
+          <div class="scroll">
+            <div class="party"><div class="avatar av-s" style="width:50px;height:50px;font-size:16px">SI</div>
+              <div><div class="pn">Sheikh Imran</div><div class="pm">+92 300 1234567</div></div></div>
+            <div class="chipline">
+              <span class="mchip"><svg><use href="#i-cal"/></svg>26 Nov · Lunch</span>
+              <span class="mchip">Barat</span><span class="mchip"><svg><use href="#i-users"/></svg>450</span><span class="mchip">Grand Hall</span>
+            </div>
+            <div class="wabar"><svg><use href="#i-wa"/></svg>WhatsApp confirmation bheja · 9:43 PM</div>
+            <div class="paycard">
+              <div class="pr"><span class="k">Total</span><span class="v">Rs 12,60,000</span></div>
+              <div class="pr"><span class="k">Advance mila</span><span class="v">Rs 4,00,000</span></div>
+              <div class="pr tot"><span class="k">Baqaya</span><span class="v">Rs 8,60,000</span></div>
+              <div class="bar"><i></i></div>
+              <div class="barlbl"><span>32% paid</span><span>26 Nov tak</span></div>
+            </div>
+            <div class="acts">
+              <div class="row2"><div class="btn pri"><svg><use href="#i-wallet"/></svg>Payment</div><div class="btn sec"><svg><use href="#i-wa"/></svg>Reminder</div></div>
+              <div class="row2"><div class="btn ghost">Edit</div><div class="btn danger">Cancel</div></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+
+  <footer class="foot">
+    <p><b>Poora "nayi booking" journey</b> — 8 connected screens, soft light theme (ivory · blush rose ·
+      champagne gold · sage). Rose dhaaga har qadam ka action batata hai. Status rang se: confirmed = sage,
+      tentative = gold outline, blocked = grey, khali = ghost.</p>
+    <p style="margin-top:10px">Pasand aaye to batao — isi style mein agli journey (<b>payment &amp; reminder</b> ya
+      <b>first-time setup</b>), ya design ko <code>TECHNICAL_PLAN.md</code> se jod ke real app banana shuru karun.</p>
+  </footer>
+</div>
