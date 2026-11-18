@@ -206,6 +206,8 @@ textarea.field{height:auto;padding:9px 12px;resize:vertical;min-height:58px;line
 .auth-card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:30px 28px;width:100%;max-width:360px;box-shadow:var(--sh-pop);text-align:center}
 .auth-logo{width:46px;height:46px;border-radius:11px;background:var(--accent);color:#fff;display:grid;place-items:center;margin:0 auto 16px}
 .auth-logo svg{width:24px;height:24px}
+.auth-card.onboard{max-width:480px}
+.auth-card.onboard .two{gap:9px}
 .auth-card h2{font-size:20px;font-weight:600;margin:0}
 .auth-sub{font-size:12.5px;color:var(--muted);margin:5px 0 20px}
 .auth-card .fl{text-align:left}

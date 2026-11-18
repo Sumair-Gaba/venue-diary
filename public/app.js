@@ -89,12 +89,60 @@ function otpStep(phone, devCode) {
     const r = await api.post('auth/verify', { phone, code: code.value.trim() });
     if (!r.ok) return toast(r.data.message || 'Invalid code');
     TOKEN = r.data.token; localStorage.setItem('vd_token', TOKEN);
-    VENUE = await api.get('venue'); startApp();
+    await enterApp();
   };
+}
+// Decide where to land after sign-in: onboarding (no venue yet) or the app.
+async function enterApp() {
+  VENUE = await api.get('venue');
+  if (VENUE && VENUE.needsOnboarding) return renderOnboarding(VENUE);
+  startApp();
 }
 function logout() {
   TOKEN = null; localStorage.removeItem('vd_token');
   location.hash = '#/home'; renderLogin();
+}
+
+// ---- onboarding (first sign-in: create your banquet) ----------------------
+function renderOnboarding(info) {
+  $('#app').hidden = true;
+  const facs = (info && info.all_facilities) || [];
+  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card onboard">
+    <div class="auth-logo">${ic('i-home')}</div>
+    <h2>Set up your banquet</h2>
+    <p class="auth-sub">Ek dafa ki setup — apne banquet ki tafseel bharein</p>
+    <div style="text-align:left">
+      <label class="fl">Your name</label><input class="field" id="o_owner" placeholder="Owner / manager name" value="${esc(info?.user?.name || '')}">
+      <label class="fl">Banquet name *</label><input class="field" id="o_name" placeholder="e.g. Royal Marquee">
+      <div class="two"><div><label class="fl">City</label><input class="field" id="o_city" placeholder="Lahore"></div>
+        <div><label class="fl">Area</label><input class="field" id="o_area" placeholder="Johar Town"></div></div>
+      <label class="fl">Address</label><input class="field" id="o_address" placeholder="Street, landmark">
+      <div class="two"><div><label class="fl">Phone</label><input class="field" id="o_phone" placeholder="+92 3XX XXXXXXX" value="${esc(info?.user?.phone || '')}"></div>
+        <div><label class="fl">Contact / WhatsApp</label><input class="field" id="o_phone2" placeholder="optional"></div></div>
+      <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="o_cmin" placeholder="200"></div>
+        <div><label class="fl">Max capacity</label><input class="field" type="number" id="o_cmax" placeholder="600"></div></div>
+      <label class="fl">Facilities</label><div class="chips" id="o_fac">${facs.map((f) => `<span class="chip" data-f="${esc(f)}">${esc(f)}</span>`).join('')}</div>
+      <button class="btn btn-pri" id="o_save" style="width:100%;margin-top:18px">${ic('i-check')}Create banquet</button>
+      <button class="btn btn-sec" id="o_logout" style="width:100%;margin-top:8px">Log out</button>
+    </div>
+  </div><div class="auth-foot">You can edit all of this later in Settings</div></div>`;
+  $('#o_fac').querySelectorAll('.chip').forEach((c) => c.onclick = () => c.classList.toggle('on'));
+  $('#o_logout').onclick = logout;
+  $('#o_save').onclick = async () => {
+    const name = $('#o_name').value.trim();
+    if (!name) return toast('Banquet name is required');
+    const facilities = [...$('#o_fac').querySelectorAll('.chip.on')].map((c) => c.dataset.f);
+    const ownerName = $('#o_owner').value.trim();
+    if (ownerName) await api.patch('me', { name: ownerName });
+    const r = await api.post('venue', {
+      name, city: $('#o_city').value.trim(), area: $('#o_area').value.trim(), address: $('#o_address').value.trim(),
+      phone: ($('#o_phone2').value.trim() || $('#o_phone').value.trim()),
+      capacity_min: Number($('#o_cmin').value) || null, capacity_max: Number($('#o_cmax').value) || null, facilities,
+    });
+    if (!r.ok) return toast(r.data.message || 'Could not create banquet');
+    toast('Banquet created · welcome!');
+    await enterApp();
+  };
 }
 
 // ---- router ---------------------------------------------------------------
@@ -145,7 +193,7 @@ async function renderHome() {
       <div class="card pad"><div class="card-h"><h3>Today's events</h3><span class="mono">${fmtDate(d.today)}</span></div><div id="todayList"></div></div>
     </div>
     <div class="card pad" style="margin-top:18px"><div class="card-h"><h3>Outstanding payments</h3><a href="#/payments">View all</a></div><div id="baqList"></div></div>`;
-  $('#hNew').onclick = () => openNewBooking({ date: todayISO(), hall: VENUE.halls[0].id, slot: VENUE.slots[0].id });
+  $('#hNew').onclick = () => startNewBooking();
   $('#todayList').innerHTML = d.todays.length ? d.todays.map((b) => rowBooking(b)).join('') : emptyState('i-cal', 'No events scheduled for today.');
   $('#baqList').innerHTML = d.outstanding.length ? d.outstanding.slice(0, 6).map((b) => rowBooking(b, true)).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
@@ -565,16 +613,23 @@ function openAddPayment(b) {
 }
 
 // ---- boot ----
+// Guard: a brand-new venue may have no halls/slots yet.
+function startNewBooking(pre) {
+  if (!VENUE.halls || !VENUE.halls.length) { toast('Pehle ek hall add karein (Settings → Halls)'); location.hash = '#/settings'; return; }
+  if (!VENUE.slots || !VENUE.slots.length) { toast('Pehle slots add karein (Settings → Slots)'); location.hash = '#/settings'; return; }
+  openNewBooking(pre || { date: todayISO(), hall: VENUE.halls[0].id, slot: VENUE.slots[0].id });
+}
+
 function startApp() {
   $('#login').innerHTML = ''; $('#app').hidden = false;
   $('#brandVenue').textContent = VENUE.name;
-  $('#newBtn').onclick = () => openNewBooking({ date: todayISO(), hall: VENUE.halls[0].id, slot: VENUE.slots[0].id });
+  $('#newBtn').onclick = () => startNewBooking();
   $('#logoutBtn').onclick = () => { if (confirm('Log out?')) logout(); };
   if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); }); listenerSet = true; }
   if (!location.hash) location.hash = '#/home';
   route();
 }
 (async function init() {
-  if (TOKEN) { try { VENUE = await api.get('venue'); return startApp(); } catch { /* fall through */ } }
+  if (TOKEN) { try { return await enterApp(); } catch { /* fall through */ } }
   renderLogin();
 })();
