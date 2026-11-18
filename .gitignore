@@ -3,3 +3,5 @@ venue.db
 venue.db-*
 *.log
 .DS_Store
+
+.claude/
