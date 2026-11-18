@@ -5,3 +5,6 @@ venue.db-*
 .DS_Store
 
 .claude/
+
+.env
+venue-local.db*
