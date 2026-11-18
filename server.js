@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleApi } from './lib/router.js';
+import { handleBlobUpload } from './lib/blob.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4000;
@@ -34,6 +35,13 @@ function serveStatic(res, pathname) {
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
+    // Vercel Blob client-upload token endpoint (special response shape).
+    if (url.pathname === '/api/media/upload' && req.method === 'POST') {
+      const body = await readBody(req);
+      const reqLike = { headers: { get: (k) => req.headers[String(k).toLowerCase()] } };
+      try { return sendJson(res, 200, await handleBlobUpload(body, reqLike)); }
+      catch (e) { return sendJson(res, 400, { error: 'UPLOAD_FAILED', message: e.message }); }
+    }
     if (url.pathname.startsWith('/api/')) {
       const body = (req.method === 'POST' || req.method === 'PATCH') ? await readBody(req) : {};
       const h = req.headers['authorization'] || '';

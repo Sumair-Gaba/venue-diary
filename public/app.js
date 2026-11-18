@@ -417,7 +417,7 @@ let setTab = 'profile';
 async function renderSettings() {
   setNav('settings');
   VENUE = await api.get('venue');
-  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates']];
+  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'], ['media', 'Photos & Videos']];
   $('#view').innerHTML = `<div class="page-h"><h1>Settings</h1></div>
     <div class="tabs">${tabs.map(([k, n]) => `<button class="tab ${k === setTab ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
     <div id="setBody"></div>`;
@@ -426,6 +426,60 @@ async function renderSettings() {
   if (setTab === 'halls') setHalls();
   if (setTab === 'slots') setSlots();
   if (setTab === 'rates') setRates();
+  if (setTab === 'media') setMedia();
+}
+
+// ---- Settings · Photos & Videos ----
+async function setMedia() {
+  const hallOpts = `<option value="">Whole venue</option>` + VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('');
+  $('#setBody').innerHTML = `<div class="card pad" style="max-width:760px">
+    <div class="card-h"><h3>Photos &amp; Videos</h3></div>
+    <div class="uploader">
+      <label class="fl" style="margin:0 8px 0 0">Attach to</label>
+      <select class="field" id="m_hall" style="max-width:200px">${hallOpts}</select>
+      <input type="file" id="m_file" accept="image/*,video/*" multiple hidden>
+      <button class="btn btn-pri" id="m_pick">${ic('i-upload')}Upload</button>
+      <span class="mono" id="m_status"></span>
+    </div>
+    <div class="media-grid" id="m_grid"></div>
+    <div class="mono" style="margin-top:10px">Images &amp; videos dono chalte hain. Har banquet ya kisi khaas hall ke liye.</div>
+  </div>`;
+  $('#m_pick').onclick = () => $('#m_file').click();
+  $('#m_file').onchange = (e) => uploadMedia([...e.target.files]);
+  await renderMediaGrid();
+}
+async function renderMediaGrid() {
+  const list = await api.get('media');
+  const hallName = (id) => (VENUE.halls.find((h) => h.id === id) || {}).name || 'Venue';
+  $('#m_grid').innerHTML = list.length ? list.map((mi) => `
+    <div class="media-item">
+      ${mi.kind === 'video'
+        ? `<video src="${esc(mi.url)}" controls preload="metadata"></video>`
+        : `<img src="${esc(mi.url)}" loading="lazy" alt="">`}
+      <div class="media-meta"><span>${esc(hallName(mi.hall_id))}</span>
+        <button class="iconbtn sm" data-del="${mi.id}" title="Delete">${ic('i-trash')}</button></div>
+    </div>`).join('') : emptyState('i-upload', 'Abhi koi photo/video nahi. Upload daba kar add karein.');
+  $('#m_grid').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Remove this file?')) return;
+    await api.del('media/' + b.dataset.del); toast('Removed'); renderMediaGrid();
+  });
+}
+async function uploadMedia(files) {
+  if (!files.length) return;
+  const st = $('#m_status'); const hallId = $('#m_hall').value || null;
+  try {
+    const { upload } = await import('/vendor/blob-client.js');
+    let n = 0;
+    for (const file of files) {
+      st.textContent = `Uploading ${++n}/${files.length}…`;
+      const blob = await upload(file.name, file, { access: 'public', handleUploadUrl: '/api/media/upload', clientPayload: TOKEN, contentType: file.type });
+      const r = await api.post('media', { url: blob.url, kind: file.type.startsWith('video') ? 'video' : 'image', hall_id: hallId });
+      if (!r.ok) throw new Error(r.data.message || 'save failed');
+    }
+    st.textContent = ''; toast(`${files.length} file(s) uploaded`); renderMediaGrid();
+  } catch (e) {
+    st.textContent = ''; toast('Upload failed: ' + (e.message || 'error'));
+  }
 }
 function setProfile() {
   const v = VENUE;
