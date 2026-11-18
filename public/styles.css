@@ -20,6 +20,7 @@ h1,h2,h3{letter-spacing:-.018em}
 
 /* layout */
 .app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.app[hidden]{display:none}
 .side{background:var(--sidebar);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px}
 .brand .mk{width:30px;height:30px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:#fff}

@@ -53,25 +53,28 @@ function bindRows() {
 }
 
 // ---- login ----------------------------------------------------------------
+// Admins reach their login only via the /admin URL. Owners get phone + OTP and
+// never see the admin option.
+function isAdminPath() { return location.pathname.replace(/\/+$/, '').toLowerCase().endsWith('/admin'); }
+
 function renderLogin() {
   $('#app').hidden = true;
+  const adminMode = isAdminPath();
   const l = $('#login');
   l.innerHTML = `<div class="auth-wrap"><div class="auth-card">
-    <div class="auth-logo">${ic('i-cal')}</div>
+    <div class="auth-logo">${ic(adminMode ? 'i-gear' : 'i-cal')}</div>
     <h2>Venue Diary</h2>
-    <p class="auth-sub">Owner sign in · phone &amp; OTP</p>
+    <p class="auth-sub">${adminMode ? 'Admin sign in · email &amp; password' : 'Owner sign in · phone &amp; OTP'}</p>
     <div id="auth-step"></div>
-  </div><div class="auth-foot">MVP · per technical brief</div></div>`;
-  phoneStep();
+  </div><div class="auth-foot">${adminMode ? 'Echo DMC · admin panel' : 'Banquet owner portal'}</div></div>`;
+  if (adminMode) adminLoginStep(); else phoneStep();
 }
 function phoneStep() {
   $('#auth-step').innerHTML = `
     <label class="fl">Phone number</label>
-    <input class="field" id="a_phone" placeholder="+92 3XX XXXXXXX" value="+923009990001" autocomplete="tel">
-    <button class="btn btn-pri" id="a_send" style="width:100%;margin-top:16px">Send OTP</button>
-    <button class="linklike" id="a_admin" style="margin-top:14px">Admin? Email se login karein</button>`;
+    <input class="field" id="a_phone" placeholder="+92 3XX XXXXXXX" autocomplete="tel">
+    <button class="btn btn-pri" id="a_send" style="width:100%;margin-top:16px">Send OTP</button>`;
   $('#a_phone').onkeydown = (e) => { if (e.key === 'Enter') $('#a_send').click(); };
-  $('#a_admin').onclick = adminLoginStep;
   $('#a_send').onclick = async () => {
     const phone = $('#a_phone').value.trim();
     if (!phone) return toast('Enter a phone number');
@@ -87,10 +90,8 @@ function adminLoginStep() {
     <input class="field" id="ad_email" type="email" placeholder="admin@echodmc.com" autocomplete="username">
     <label class="fl">Password</label>
     <input class="field" id="ad_pass" type="password" placeholder="••••••••" autocomplete="current-password">
-    <button class="btn btn-pri" id="ad_in" style="width:100%;margin-top:16px">Sign in</button>
-    <button class="linklike" id="ad_back" style="margin-top:14px">← Owner login (phone)</button>`;
+    <button class="btn btn-pri" id="ad_in" style="width:100%;margin-top:16px">Sign in</button>`;
   $('#ad_pass').onkeydown = (e) => { if (e.key === 'Enter') $('#ad_in').click(); };
-  $('#ad_back').onclick = phoneStep;
   $('#ad_in').onclick = async () => {
     const email = $('#ad_email').value.trim(), password = $('#ad_pass').value;
     if (!email || !password) return toast('Email aur password daalein');
