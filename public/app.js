@@ -453,6 +453,11 @@ async function renderHome() {
   $('#todayList').innerHTML = d.todays.length ? d.todays.map((b) => rowBooking(b)).join('') : emptyState('i-cal', 'No events scheduled for today.');
   $('#baqList').innerHTML = d.outstanding.length ? d.outstanding.slice(0, 6).map((b) => rowBooking(b, true)).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
+  bindLightbox('#view');
+}
+// Wire every .lb-img within a container to open the lightbox.
+function bindLightbox(root) {
+  (root ? $(root) : document).querySelectorAll('.lb-img').forEach((im) => im.onclick = () => openLightbox(im.dataset.src, im.dataset.kind || 'image'));
 }
 
 // ---- notification bell + dropdown ----
@@ -488,6 +493,23 @@ async function toggleNotif() {
 }
 function closeNotif() { $('#notifOv') && $('#notifOv').remove(); $('#notifPanel') && $('#notifPanel').remove(); bellOpen = false; }
 
+// ---- image/video lightbox ----
+// Click any venue photo (dashboard gallery or Settings) to view it large.
+function openLightbox(url, kind = 'image') {
+  closeLightbox();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="lightbox" id="lightbox">
+      <button class="lightbox-x" id="lbX" title="Close">${ic('i-x')}</button>
+      ${kind === 'video'
+        ? `<video src="${esc(url)}" class="lightbox-media" controls autoplay playsinline></video>`
+        : `<img src="${esc(url)}" class="lightbox-media" alt="">`}
+    </div>`);
+  const lb = $('#lightbox');
+  lb.onclick = (e) => { if (e.target === lb) closeLightbox(); };
+  $('#lbX').onclick = closeLightbox;
+}
+function closeLightbox() { $('#lightbox') && $('#lightbox').remove(); }
+
 function alertRowHTML(a) {
   const when = a.date ? fmtDate(a.date) : '';
   const extra = a.type === 'balance' && a.amount ? ' · ' + fmt(a.amount) : '';
@@ -505,7 +527,7 @@ function galleryCardHTML() {
   if (!featureOn('media')) return '';
   const imgs = (VENUE.media || []).filter((m) => m.kind !== 'video').slice(0, 8);
   const body = imgs.length
-    ? `<div class="media-grid">${imgs.map((m) => `<div class="media-item"><img src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>`
+    ? `<div class="media-grid">${imgs.map((m) => `<div class="media-item"><img class="lb-img" data-src="${esc(m.url)}" src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>`
     : emptyState('i-upload', 'No photos yet. Add some in Settings → Photos & Videos.');
   return `<div class="card pad" style="margin-top:18px"><div class="card-h"><h3>Venue photos</h3><a href="#/settings">Manage</a></div>${body}</div>`;
 }
@@ -936,11 +958,12 @@ async function renderMediaGrid() {
   $('#m_grid').innerHTML = list.length ? list.map((mi) => `
     <div class="media-item">
       ${mi.kind === 'video'
-        ? `<video src="${esc(mi.url)}" controls preload="metadata"></video>`
-        : `<img src="${esc(mi.url)}" loading="lazy" alt="">`}
+        ? `<video class="lb-img" data-src="${esc(mi.url)}" data-kind="video" src="${esc(mi.url)}" preload="metadata" muted></video>`
+        : `<img class="lb-img" data-src="${esc(mi.url)}" src="${esc(mi.url)}" loading="lazy" alt="">`}
       <div class="media-meta"><span>${esc(hallName(mi.hall_id))}</span>
         <button class="iconbtn sm" data-del="${mi.id}" title="Delete">${ic('i-trash')}</button></div>
     </div>`).join('') : emptyState('i-upload', 'No photos or videos yet. Tap Upload to add some.');
+  bindLightbox('#m_grid');
   $('#m_grid').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
     if (!confirm('Remove this file?')) return;
     await api.del('media/' + b.dataset.del); toast('Removed'); renderMediaGrid();
@@ -1383,7 +1406,7 @@ function startApp() {
   // "Back to Admin" is only ever for an admin who opened a banquet — never for owners.
   if (ME?.role === 'admin' && ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = busy(backToAdmin); }
   else { lb.innerHTML = ic('i-logout') + 'Log out'; lb.onclick = () => { if (confirm('Log out?')) logout(); }; }
-  if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeNotif(); } }); listenerSet = true; }
+  if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeNotif(); closeLightbox(); } }); listenerSet = true; }
   if (!location.hash) location.hash = '#/home';
   route();
 }
