@@ -41,6 +41,8 @@ const METHODS = ['Cash','Bank transfer','Cheque','Other'];
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => new Date(iso + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 const cap = (s) => s ? s[0].toUpperCase() + s.slice(1) : '';
+const slugify = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+const originBase = () => location.origin.replace(/\/$/, '');
 const pill = (status) => `<span class="pill p-${status}"><span class="dt"></span>${cap(status)}</span>`;
 const kpi = (icon, n, label) => `<div class="kpi"><div class="ico">${ic(icon)}</div><div class="kmeta"><div class="n">${n}</div><div class="l">${label}</div></div></div>`;
 const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><span>${esc(text)}</span></div>`;
@@ -91,21 +93,52 @@ function bindRows() {
 }
 
 // ---- login ----------------------------------------------------------------
-// Admins reach their login only via the /admin URL. Owners get phone + OTP and
-// never see the admin option.
-function isAdminPath() { return location.pathname.replace(/\/+$/, '').toLowerCase().endsWith('/admin'); }
+// The root URL (/) and /admin show the admin login (email + password). Every
+// other path is a banquet slug (e.g. /shalimar-grand) and shows that banquet's
+// branded owner login (phone + OTP).
+function getPathMode() {
+  const p = location.pathname.replace(/\/+$/, '').toLowerCase(); // '' at root
+  if (p === '' || p === '/admin') return { mode: 'admin' };
+  return { mode: 'owner', slug: p.replace(/^\//, '').split('/')[0] };
+}
+// Put (and keep) the owner's banquet name in the address bar: /<slug>.
+function setOwnerUrl(slug) {
+  if (!slug) return;
+  const want = '/' + slug;
+  if (location.pathname.replace(/\/+$/, '').toLowerCase() !== want)
+    history.replaceState(null, '', want + (location.hash || ''));
+}
 
-function renderLogin() {
+async function renderLogin() {
   $('#app').hidden = true;
-  const adminMode = isAdminPath();
-  const l = $('#login');
-  l.innerHTML = `<div class="auth-wrap"><div class="auth-card">
-    <div class="auth-logo">${ic(adminMode ? 'i-gear' : 'i-cal')}</div>
+  const { mode, slug } = getPathMode();
+  if (mode === 'owner') return renderOwnerLogin(slug);
+  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
+    <div class="auth-logo">${ic('i-gear')}</div>
     <h2>Venue Diary</h2>
-    <p class="auth-sub">${adminMode ? 'Admin sign in · email &amp; password' : 'Owner sign in · phone &amp; OTP'}</p>
+    <p class="auth-sub">Admin sign in · email &amp; password</p>
     <div id="auth-step"></div>
-  </div><div class="auth-foot">${adminMode ? 'Echo DMC · admin panel' : 'Banquet owner portal'}</div></div>`;
-  if (adminMode) adminLoginStep(); else phoneStep();
+  </div><div class="auth-foot">Echo DMC · admin panel</div></div>`;
+  adminLoginStep();
+}
+// Branded owner login for a specific banquet slug.
+async function renderOwnerLogin(slug) {
+  const v = await api.get('public/venue?slug=' + encodeURIComponent(slug));
+  if (!v || v.error) {
+    $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo">${ic('i-warn')}</div>
+      <h2>Banquet not found</h2>
+      <p class="auth-sub">No banquet is registered at this link. Please check the URL with your administrator (Echo DMC).</p>
+    </div><div class="auth-foot">Venue Diary</div></div>`;
+    return;
+  }
+  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
+    <div class="auth-logo">${ic('i-cal')}</div>
+    <h2>${esc(v.name)}</h2>
+    <p class="auth-sub">Owner sign in · phone &amp; OTP</p>
+    <div id="auth-step"></div>
+  </div><div class="auth-foot">${esc([v.city, v.area].filter(Boolean).join(', ') || 'Banquet owner portal')}</div></div>`;
+  phoneStep();
 }
 function phoneStep() {
   $('#auth-step').innerHTML = `
@@ -165,6 +198,7 @@ async function enterApp() {
   if (!ME || !ME.hasVenue) return renderNoVenue();
   ADMIN_VENUE = null;
   VENUE = await api.get('venue');
+  setOwnerUrl(ME.slug);   // keep /<banquet-slug> in the address bar
   startApp();
 }
 function logout() {
@@ -196,9 +230,15 @@ async function renderAdmin() {
       <div class="vmeta">${ic('i-home')} ${esc([v.city, v.area].filter(Boolean).join(', ') || '—')}</div>
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
       <div class="vmeta">${ic('i-book')} ${v.booking_count} bookings</div>
-      <button class="btn btn-sec btn-sm" data-open="${v.id}" style="margin-top:12px;width:100%">Open dashboard ${ic('i-chev-r')}</button>
+      ${v.slug ? `<div class="vlink" data-copy="${esc(originBase() + '/' + v.slug)}" title="Copy owner link">${ic('i-link')}<span>/${esc(v.slug)}</span><span class="vlink-copy">Copy</span></div>` : ''}
+      <button class="btn btn-sec btn-sm" data-open="${v.id}" style="margin-top:10px;width:100%">Open dashboard ${ic('i-chev-r')}</button>
     </div>`).join('') : emptyState('i-home', 'No banquets registered yet. Tap "Register new banquet" to add one.');
   $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = busy(() => openBanquet(Number(b.dataset.open))));
+  $('#ad_grid').querySelectorAll('[data-copy]').forEach((b) => b.onclick = async (e) => {
+    e.stopPropagation();
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Owner link copied'); }
+    catch { toast(b.dataset.copy); }
+  });
 }
 async function openBanquet(id) {
   ADMIN_VENUE = id;
@@ -213,11 +253,19 @@ function registerBanquetModal() {
   modal('Register new banquet', `
     <div class="form-sec">Banquet</div>
     <label class="fl">Banquet name <span class="req">*</span></label><input class="field" id="rb_name" placeholder="e.g. Royal Marquee">
+    <label class="fl">Owner link (URL)</label>
+    <div class="slug-field"><span class="slug-pre">${esc(originBase())}/</span><input class="field" id="rb_slug" placeholder="royal-marquee"></div>
+    <div class="slug-hint mono">The owner opens their dashboard at this link.</div>
     <div class="two"><div><label class="fl">City</label><input class="field" id="rb_city" placeholder="Lahore"></div>
       <div><label class="fl">Area</label><input class="field" id="rb_area" placeholder="Johar Town"></div></div>
     <label class="fl">Address</label><input class="field" id="rb_address" placeholder="Street, landmark">
     <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="rb_cmin" placeholder="200"></div>
       <div><label class="fl">Max capacity</label><input class="field" type="number" id="rb_cmax" placeholder="800"></div></div>
+
+    <div class="form-sec">Halls <span class="req">*</span></div>
+    <div class="mono" style="margin:-4px 0 10px;color:var(--muted)">Add every hall / lawn. Bookings are made per hall, so at least one is required.</div>
+    <div id="rb_halls"></div>
+    <button type="button" class="btn btn-sec btn-sm" id="rb_addhall" style="margin-top:4px">${ic('i-plus')}Add another hall</button>
 
     <div class="form-sec">Owner</div>
     <div class="two"><div><label class="fl">Owner name</label><input class="field" id="rb_oname" placeholder="Owner / manager"></div>
@@ -225,23 +273,48 @@ function registerBanquetModal() {
 
     <div class="form-sec">Location</div>
     ${locationPickerHTML('rb')}
-    <div class="modal-note">${ic('i-users')}<span>The owner signs in with their phone (OTP) to see this dashboard.</span></div>`,
+    <div class="modal-note">${ic('i-users')}<span>The owner signs in with their phone (OTP) at the owner link above to see this dashboard.</span></div>`,
     `<button class="btn btn-sec" id="rb_cancel">Cancel</button><button class="btn btn-pri" id="rb_save">${ic('i-check')}Register</button>`,
     'wide');
+
+  // Dynamic hall rows (start with one; admin adds more).
+  const addHallRow = (name = '', cap = '') => {
+    const row = el({ className: 'two hall-row' });
+    row.innerHTML = `<div><input class="field hall-name" placeholder="Hall name (e.g. Grand Hall)" value="${esc(name)}"></div>
+      <div style="display:flex;gap:8px"><input class="field hall-cap" type="number" placeholder="Capacity" value="${esc(cap)}">
+      <button type="button" class="iconbtn hall-del" title="Remove">${ic('i-x')}</button></div>`;
+    row.querySelector('.hall-del').onclick = () => { if ($('#rb_halls').children.length > 1) row.remove(); else toast('Keep at least one hall'); };
+    $('#rb_halls').append(row);
+  };
+  addHallRow('Main Hall');
+  $('#rb_addhall').onclick = () => addHallRow();
+
+  // Auto-fill the slug from the name until the admin edits the slug themselves.
+  let slugEdited = false;
+  $('#rb_slug').oninput = () => { slugEdited = true; $('#rb_slug').value = slugify($('#rb_slug').value); };
+  $('#rb_name').oninput = () => { if (!slugEdited) $('#rb_slug').value = slugify($('#rb_name').value); };
+
   setupLocationPicker('rb', {}, () => $('#rb_city').value);
   $('#rb_cancel').onclick = closeModal;
   $('#rb_save').onclick = busy(async () => {
     const name = $('#rb_name').value.trim(), phone = $('#rb_ophone').value.trim();
     if (!name) return toast('Please enter the banquet name');
     if (!phone) return toast('Please enter the owner phone number');
+    const halls = [...$('#rb_halls').querySelectorAll('.hall-row')].map((r) => ({
+      name: r.querySelector('.hall-name').value.trim(), capacity: Number(r.querySelector('.hall-cap').value) || null,
+    })).filter((h) => h.name);
+    if (!halls.length) return toast('Please add at least one hall');
     const r = await api.post('admin/venues', {
-      name, owner_name: $('#rb_oname').value.trim(), owner_phone: phone,
+      name, slug: $('#rb_slug').value.trim() || slugify(name), halls,
+      owner_name: $('#rb_oname').value.trim(), owner_phone: phone,
       city: $('#rb_city').value.trim(), area: $('#rb_area').value.trim(), address: $('#rb_address').value.trim(),
       capacity_min: Number($('#rb_cmin').value) || null, capacity_max: Number($('#rb_cmax').value) || null,
       ...readPicker('rb'),
     });
     if (!r.ok) return toast(r.data.message || 'Could not register this banquet. Please try again.');
-    closeModal(); toast('Banquet registered'); renderAdmin();
+    closeModal();
+    toast('Banquet registered' + (r.data.slug ? ` · link: /${r.data.slug}` : ''));
+    renderAdmin();
   });
 }
 // Owner whose banquet the admin hasn't created yet.
@@ -309,11 +382,20 @@ async function renderHome() {
       </div>
       <div class="card pad"><div class="card-h"><h3>Today's events</h3><span class="mono">${fmtDate(d.today)}</span></div><div id="todayList"></div></div>
     </div>
-    <div class="card pad" style="margin-top:18px"><div class="card-h"><h3>Outstanding payments</h3><a href="#/payments">View all</a></div><div id="baqList"></div></div>`;
+    <div class="card pad" style="margin-top:18px"><div class="card-h"><h3>Outstanding payments</h3><a href="#/payments">View all</a></div><div id="baqList"></div></div>
+    ${galleryCardHTML()}`;
   $('#hNew').onclick = () => startNewBooking();
   $('#todayList').innerHTML = d.todays.length ? d.todays.map((b) => rowBooking(b)).join('') : emptyState('i-cal', 'No events scheduled for today.');
   $('#baqList').innerHTML = d.outstanding.length ? d.outstanding.slice(0, 6).map((b) => rowBooking(b, true)).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
+}
+// Venue photo gallery for the dashboard (uses VENUE.media loaded with the venue).
+function galleryCardHTML() {
+  const imgs = (VENUE.media || []).filter((m) => m.kind !== 'video').slice(0, 8);
+  const body = imgs.length
+    ? `<div class="media-grid">${imgs.map((m) => `<div class="media-item"><img src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>`
+    : emptyState('i-upload', 'No photos yet. Add some in Settings → Photos & Videos.');
+  return `<div class="card pad" style="margin-top:18px"><div class="card-h"><h3>Venue photos</h3><a href="#/settings">Manage</a></div>${body}</div>`;
 }
 function rowBooking(b, showBal) {
   return `<div class="row click" data-id="${b.id}">
@@ -569,7 +651,7 @@ async function setMedia() {
       <span class="mono" id="m_status"></span>
     </div>
     <div class="media-grid" id="m_grid"></div>
-    <div class="mono" style="margin-top:10px">Both images and videos are supported — for the whole venue or a specific hall.</div>
+    <div class="mono" style="margin-top:10px">Photos upload instantly (auto-compressed). Videos need a connected Blob store. Attach to the whole venue or a specific hall.</div>
   </div>`;
   $('#m_pick').onclick = () => $('#m_file').click();
   $('#m_file').onchange = (e) => uploadMedia([...e.target.files]);
@@ -591,22 +673,49 @@ async function renderMediaGrid() {
     await api.del('media/' + b.dataset.del); toast('Removed'); renderMediaGrid();
   });
 }
+// Resize/compress an image in the browser to a small JPEG data URL. This lets
+// photo uploads work everywhere with no external storage. Videos still use Blob.
+function imageToDataUrl(file, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read this image')); };
+    img.src = url;
+  });
+}
 async function uploadMedia(files) {
   if (!files.length) return;
   const st = $('#m_status'); const hallId = $('#m_hall').value || null;
-  try {
-    const { upload } = await import('/vendor/blob-client.js');
-    let n = 0;
-    for (const file of files) {
-      st.textContent = `Uploading ${++n}/${files.length}…`;
-      const blob = await upload(file.name, file, { access: 'public', handleUploadUrl: '/api/media/upload', clientPayload: TOKEN, contentType: file.type });
-      const r = await api.post('media', { url: blob.url, kind: file.type.startsWith('video') ? 'video' : 'image', hall_id: hallId });
-      if (!r.ok) throw new Error(r.data.message || 'save failed');
-    }
-    st.textContent = ''; toast(`${files.length} file(s) uploaded`); renderMediaGrid();
-  } catch (e) {
-    st.textContent = ''; toast('Upload failed: ' + (e.message || 'error'));
+  let done = 0, failed = 0;
+  for (const file of files) {
+    st.textContent = `Uploading ${done + failed + 1}/${files.length}…`;
+    try {
+      if (file.type.startsWith('image/')) {
+        const url = await imageToDataUrl(file);
+        const r = await api.post('media', { url, kind: 'image', hall_id: hallId });
+        if (!r.ok) throw new Error(r.data.message || 'save failed');
+      } else {
+        // Video (or other): uploads straight to Vercel Blob (needs a Blob store).
+        const { upload } = await import('/vendor/blob-client.js');
+        const blob = await upload(file.name, file, { access: 'public', handleUploadUrl: '/api/media/upload', clientPayload: TOKEN, contentType: file.type });
+        const r = await api.post('media', { url: blob.url, kind: 'video', hall_id: hallId });
+        if (!r.ok) throw new Error(r.data.message || 'save failed');
+      }
+      done++;
+    } catch (e) { failed++; console.error('Upload failed for', file.name, e); }
   }
+  st.textContent = '';
+  if (done) toast(`${done} file(s) uploaded`);
+  if (failed) toast(`${failed} file(s) failed. Photos always work; videos need a Blob store to be connected.`);
+  renderMediaGrid();
 }
 function setProfile() {
   const v = VENUE;
@@ -985,8 +1094,9 @@ function startApp() {
   $('#brandVenue').textContent = VENUE.name;
   $('#newBtn').onclick = () => startNewBooking();
   const lb = $('#logoutBtn');
-  if (ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = busy(backToAdmin); }
-  else lb.onclick = () => { if (confirm('Log out?')) logout(); };
+  // "Back to Admin" is only ever for an admin who opened a banquet — never for owners.
+  if (ME?.role === 'admin' && ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = busy(backToAdmin); }
+  else { lb.innerHTML = ic('i-logout') + 'Log out'; lb.onclick = () => { if (confirm('Log out?')) logout(); }; }
   if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); }); listenerSet = true; }
   if (!location.hash) location.hash = '#/home';
   route();

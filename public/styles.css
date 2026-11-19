@@ -170,7 +170,25 @@ h1,h2,h3{letter-spacing:-.018em}
 /* forms / modal */
 .overlay{position:fixed;inset:0;background:rgba(28,28,30,.32);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:44px 16px;overflow:auto;z-index:50}
 .modal{background:var(--paper);border-radius:14px;width:100%;max-width:440px;box-shadow:var(--sh-pop);border:1px solid var(--line)}
-.modal.wide{max-width:560px}
+.modal.wide{max-width:660px}
+/* slug / owner-link field in the register form */
+.slug-field{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--paper)}
+.slug-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-l)}
+.slug-pre{display:flex;align-items:center;padding:0 2px 0 11px;font-family:var(--mono);font-size:12.5px;color:var(--muted);background:var(--hover);white-space:nowrap;max-width:60%;overflow:hidden;text-overflow:ellipsis}
+.slug-field .field{border:none;box-shadow:none;border-radius:0;padding-left:4px}
+.slug-field .field:focus{box-shadow:none}
+.slug-hint{margin:6px 0 2px;color:var(--muted)}
+/* hall rows */
+.hall-row{margin-bottom:8px}
+.hall-row .iconbtn{flex:none}
+/* owner-link chip on admin venue cards */
+.vlink{display:flex;align-items:center;gap:7px;margin-top:10px;padding:7px 10px;border-radius:var(--r-sm);
+  background:var(--hover);border:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--ink-soft);cursor:pointer}
+.vlink:hover{border-color:var(--accent);color:var(--accent)}
+.vlink svg{width:14px;height:14px;flex:none;color:var(--muted)}
+.vlink:hover svg{color:var(--accent)}
+.vlink span:nth-child(2){flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vlink-copy{flex:none;font-family:var(--sans);font-weight:600;font-size:11px;color:var(--accent)}
 /* section heading + required marker + footnote inside forms */
 .form-sec{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2);
   margin:20px 0 2px;padding-bottom:7px;border-bottom:1px solid var(--line2)}
