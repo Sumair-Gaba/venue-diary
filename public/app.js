@@ -3,12 +3,21 @@
 // ---- api + auth -----------------------------------------------------------
 let TOKEN = localStorage.getItem('vd_token') || null;
 let ADMIN_VENUE = null; // when an admin is viewing a specific banquet
+
+// Typed errors so callers can tell a dropped connection from an expired login.
+function apiError(kind, msg) { const e = new Error(msg || kind); e[kind] = true; return e; }
+
 async function req(method, p, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (TOKEN) headers.Authorization = 'Bearer ' + TOKEN;
   if (ADMIN_VENUE) headers['X-Venue-Id'] = String(ADMIN_VENUE);
-  const r = await fetch('/api/' + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  if (r.status === 401 && !p.startsWith('auth/')) { logout(); throw new Error('unauthorized'); }
+  let r;
+  try {
+    r = await fetch('/api/' + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    throw apiError('network', 'Network error'); // offline / server unreachable
+  }
+  if (r.status === 401 && !p.startsWith('auth/')) { sessionExpired(); throw apiError('unauthorized'); }
   const data = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data };
 }
@@ -45,6 +54,35 @@ function toast(msg, wa) {
   const t = el({ className: 'toast', innerHTML: (wa ? ic('i-wa') : ic('i-check')) + `<span>${esc(msg)}</span>` });
   $('#toast-root').append(t); setTimeout(() => t.remove(), 3200);
 }
+
+// Run an async action with a button spinner so the user always sees that their
+// click registered. Disables the button while busy and surfaces a clear,
+// English message on any failure (network drop, server error, expired session).
+async function withBusy(btn, fn) {
+  if (!btn || btn.classList.contains('loading')) return; // ignore double taps
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    await fn();
+  } catch (e) {
+    if (e && e.unauthorized) return;                    // session-expired flow already took over
+    toast(e && e.network ? 'Network error — please check your connection and try again.'
+                         : 'Something went wrong. Please try again.');
+  } finally {
+    btn.classList.remove('loading'); btn.disabled = false;
+  }
+}
+// Convenience: turn an onclick handler into a busy-guarded one.
+const busy = (fn) => (e) => withBusy(e.currentTarget, () => fn(e));
+
+// The token the server gave us is no longer valid — bounce cleanly to sign-in.
+function sessionExpired() {
+  if (!TOKEN) return;           // already signed out
+  TOKEN = null; localStorage.removeItem('vd_token');
+  ADMIN_VENUE = null; VENUE = null; ME = null;
+  closeModal();
+  toast('Your session has expired. Please sign in again.');
+  location.hash = '#/home'; renderLogin();
+}
 function setNav(page) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#/' + page));
 }
@@ -75,13 +113,13 @@ function phoneStep() {
     <input class="field" id="a_phone" placeholder="+92 3XX XXXXXXX" autocomplete="tel">
     <button class="btn btn-pri" id="a_send" style="width:100%;margin-top:16px">Send OTP</button>`;
   $('#a_phone').onkeydown = (e) => { if (e.key === 'Enter') $('#a_send').click(); };
-  $('#a_send').onclick = async () => {
+  $('#a_send').onclick = busy(async () => {
     const phone = $('#a_phone').value.trim();
-    if (!phone) return toast('Enter a phone number');
+    if (!phone) return toast('Please enter a phone number');
     const r = await api.post('auth/request-otp', { phone });
-    if (!r.ok) return toast('Could not send OTP');
+    if (!r.ok) return toast(r.data.message || 'Could not send the code. Please try again.');
     otpStep(phone, r.data.devCode);
-  };
+  });
 }
 // Admin signs in with email + password (owners use phone + OTP).
 function adminLoginStep() {
@@ -92,14 +130,14 @@ function adminLoginStep() {
     <input class="field" id="ad_pass" type="password" placeholder="••••••••" autocomplete="current-password">
     <button class="btn btn-pri" id="ad_in" style="width:100%;margin-top:16px">Sign in</button>`;
   $('#ad_pass').onkeydown = (e) => { if (e.key === 'Enter') $('#ad_in').click(); };
-  $('#ad_in').onclick = async () => {
+  $('#ad_in').onclick = busy(async () => {
     const email = $('#ad_email').value.trim(), password = $('#ad_pass').value;
-    if (!email || !password) return toast('Email aur password daalein');
+    if (!email || !password) return toast('Please enter your email and password');
     const r = await api.post('auth/admin-login', { email, password });
-    if (!r.ok) return toast(r.data.message || 'Login failed');
+    if (!r.ok) return toast(r.data.message || 'Sign in failed. Please try again.');
     TOKEN = r.data.token; localStorage.setItem('vd_token', TOKEN);
     await enterApp();
-  };
+  });
 }
 function otpStep(phone, devCode) {
   $('#auth-step').innerHTML = `
@@ -111,12 +149,13 @@ function otpStep(phone, devCode) {
   const code = $('#a_code'); code.focus();
   code.onkeydown = (e) => { if (e.key === 'Enter') $('#a_verify').click(); };
   $('#a_back').onclick = phoneStep;
-  $('#a_verify').onclick = async () => {
+  $('#a_verify').onclick = busy(async () => {
+    if (!code.value.trim()) return toast('Please enter the 4-digit code');
     const r = await api.post('auth/verify', { phone, code: code.value.trim() });
-    if (!r.ok) return toast(r.data.message || 'Invalid code');
+    if (!r.ok) return toast(r.data.message || 'Invalid or expired code');
     TOKEN = r.data.token; localStorage.setItem('vd_token', TOKEN);
     await enterApp();
-  };
+  });
 }
 // Decide where to land after sign-in: admin panel, owner dashboard, or a
 // "not set up yet" notice for owners whose banquet the admin hasn't created.
@@ -158,8 +197,8 @@ async function renderAdmin() {
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
       <div class="vmeta">${ic('i-book')} ${v.booking_count} bookings</div>
       <button class="btn btn-sec btn-sm" data-open="${v.id}" style="margin-top:12px;width:100%">Open dashboard ${ic('i-chev-r')}</button>
-    </div>`).join('') : emptyState('i-home', 'Abhi koi banquet register nahi. "Register new banquet" dabayein.');
-  $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openBanquet(Number(b.dataset.open)));
+    </div>`).join('') : emptyState('i-home', 'No banquets registered yet. Tap "Register new banquet" to add one.');
+  $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = busy(() => openBanquet(Number(b.dataset.open))));
 }
 async function openBanquet(id) {
   ADMIN_VENUE = id;
@@ -172,32 +211,38 @@ async function openBanquet(id) {
 function backToAdmin() { ADMIN_VENUE = null; VENUE = null; $('#app').hidden = true; renderAdmin(); }
 function registerBanquetModal() {
   modal('Register new banquet', `
-    <label class="fl">Banquet name *</label><input class="field" id="rb_name" placeholder="e.g. Royal Marquee">
-    <div class="two"><div><label class="fl">Owner name</label><input class="field" id="rb_oname" placeholder="Owner / manager"></div>
-      <div><label class="fl">Owner phone *</label><input class="field" id="rb_ophone" placeholder="+92 3XX XXXXXXX"></div></div>
+    <div class="form-sec">Banquet</div>
+    <label class="fl">Banquet name <span class="req">*</span></label><input class="field" id="rb_name" placeholder="e.g. Royal Marquee">
     <div class="two"><div><label class="fl">City</label><input class="field" id="rb_city" placeholder="Lahore"></div>
       <div><label class="fl">Area</label><input class="field" id="rb_area" placeholder="Johar Town"></div></div>
     <label class="fl">Address</label><input class="field" id="rb_address" placeholder="Street, landmark">
-    <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="rb_cmin"></div>
-      <div><label class="fl">Max capacity</label><input class="field" type="number" id="rb_cmax"></div></div>
+    <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="rb_cmin" placeholder="200"></div>
+      <div><label class="fl">Max capacity</label><input class="field" type="number" id="rb_cmax" placeholder="800"></div></div>
+
+    <div class="form-sec">Owner</div>
+    <div class="two"><div><label class="fl">Owner name</label><input class="field" id="rb_oname" placeholder="Owner / manager"></div>
+      <div><label class="fl">Owner phone <span class="req">*</span></label><input class="field" id="rb_ophone" placeholder="+92 3XX XXXXXXX"></div></div>
+
+    <div class="form-sec">Location</div>
     ${locationPickerHTML('rb')}
-    <div class="mono" style="margin-top:10px">Owner is apne phone (OTP) se login kar ke yeh dashboard dekhega.</div>`,
-    `<button class="btn btn-sec" id="rb_cancel">Cancel</button><button class="btn btn-pri" id="rb_save">${ic('i-check')}Register</button>`);
-  initLocationPicker('rb', {}, () => $('#rb_city').value);
+    <div class="modal-note">${ic('i-users')}<span>The owner signs in with their phone (OTP) to see this dashboard.</span></div>`,
+    `<button class="btn btn-sec" id="rb_cancel">Cancel</button><button class="btn btn-pri" id="rb_save">${ic('i-check')}Register</button>`,
+    'wide');
+  setupLocationPicker('rb', {}, () => $('#rb_city').value);
   $('#rb_cancel').onclick = closeModal;
-  $('#rb_save').onclick = async () => {
+  $('#rb_save').onclick = busy(async () => {
     const name = $('#rb_name').value.trim(), phone = $('#rb_ophone').value.trim();
-    if (!name) return toast('Banquet name required');
-    if (!phone) return toast('Owner phone required');
+    if (!name) return toast('Please enter the banquet name');
+    if (!phone) return toast('Please enter the owner phone number');
     const r = await api.post('admin/venues', {
       name, owner_name: $('#rb_oname').value.trim(), owner_phone: phone,
       city: $('#rb_city').value.trim(), area: $('#rb_area').value.trim(), address: $('#rb_address').value.trim(),
       capacity_min: Number($('#rb_cmin').value) || null, capacity_max: Number($('#rb_cmax').value) || null,
       ...readPicker('rb'),
     });
-    if (!r.ok) return toast(r.data.message || 'Could not register');
+    if (!r.ok) return toast(r.data.message || 'Could not register this banquet. Please try again.');
     closeModal(); toast('Banquet registered'); renderAdmin();
-  };
+  });
 }
 // Owner whose banquet the admin hasn't created yet.
 function renderNoVenue() {
@@ -205,7 +250,7 @@ function renderNoVenue() {
   $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
     <div class="auth-logo">${ic('i-home')}</div>
     <h2>Account pending setup</h2>
-    <p class="auth-sub">Aapka banquet abhi register nahi hua. Admin (Echo DMC) se rabta karein — woh aapka dashboard bana kar denge.</p>
+    <p class="auth-sub">Your banquet hasn't been set up yet. Please contact the admin (Echo DMC) — they'll create your dashboard for you.</p>
     <button class="btn btn-sec" id="nv_logout" style="width:100%;margin-top:14px">Log out</button>
   </div></div>`;
   $('#nv_logout').onclick = logout;
@@ -214,14 +259,20 @@ function renderNoVenue() {
 // ---- router ---------------------------------------------------------------
 async function route() {
   const [, page, arg] = (location.hash || '#/home').split('/');
-  if (page === 'home') return renderHome();
-  if (page === 'calendar') return renderCalendar();
-  if (page === 'bookings') return renderBookings();
-  if (page === 'payments') return renderPayments();
-  if (page === 'import') return renderImport();
-  if (page === 'settings') return renderSettings();
-  if (page === 'booking') return renderBookingDetail(arg);
-  renderHome();
+  try {
+    if (page === 'home') return await renderHome();
+    if (page === 'calendar') return await renderCalendar();
+    if (page === 'bookings') return await renderBookings();
+    if (page === 'payments') return await renderPayments();
+    if (page === 'import') return await renderImport();
+    if (page === 'settings') return await renderSettings();
+    if (page === 'booking') return await renderBookingDetail(arg);
+    await renderHome();
+  } catch (e) {
+    if (e && e.unauthorized) return; // handled by sessionExpired()
+    toast(e && e.network ? 'Network error — please check your connection.' : 'Could not load this page. Please try again.');
+    if ($('#view') && !$('#view').innerHTML) $('#view').innerHTML = emptyState('i-warn', 'Could not load. Check your connection and try again.');
+  }
 }
 
 // ---- Home ----
@@ -421,17 +472,27 @@ async function renderBookingDetail(id) {
   if ($('#notifs')) $('#notifs').innerHTML = b.notifications.map((n) => `<div class="row"><div class="grow"><div class="nm">${n.template.replace(/_/g, ' ')}</div><div class="dt">${new Date(n.sent_at).toLocaleString('en-GB')}</div></div><span class="pill p-confirmed"><span class="dt"></span>${cap(n.status)}</span></div>`).join('');
   $('#addPay').onclick = () => openAddPayment(b);
   if ($('#editBtn')) $('#editBtn').onclick = () => openEditBooking(b);
-  $('#waBtn').onclick = async () => { await api.post(`bookings/${b.id}/remind`); toast('WhatsApp reminder sent', true); renderBookingDetail(id); };
-  if ($('#confirmBtn')) $('#confirmBtn').onclick = async () => {
+  $('#waBtn').onclick = busy(async () => {
+    const r = await api.post(`bookings/${b.id}/remind`);
+    if (!r.ok) return toast(r.data.message || 'Could not send the reminder. Please try again.');
+    toast('WhatsApp reminder sent', true); renderBookingDetail(id);
+  });
+  if ($('#confirmBtn')) $('#confirmBtn').onclick = busy(async () => {
     const r = await api.post(`bookings/${b.id}/confirm`);
-    if (!r.ok) return toast('Could not confirm — slot conflict');
+    if (!r.ok) return toast(r.data.message || 'Could not confirm — the slot may already be booked.');
     toast('Booking confirmed · WhatsApp sent', true); renderBookingDetail(id);
-  };
-  if ($('#completeBtn')) $('#completeBtn').onclick = async () => { await api.post(`bookings/${b.id}/complete`); toast('Marked as completed'); renderBookingDetail(id); };
-  if ($('#cancelBtn')) $('#cancelBtn').onclick = async () => {
+  });
+  if ($('#completeBtn')) $('#completeBtn').onclick = busy(async () => {
+    const r = await api.post(`bookings/${b.id}/complete`);
+    if (!r.ok) return toast(r.data.message || 'Could not update. Please try again.');
+    toast('Marked as completed'); renderBookingDetail(id);
+  });
+  if ($('#cancelBtn')) $('#cancelBtn').onclick = busy(async () => {
     const reason = prompt('Reason for cancellation?'); if (reason === null) return;
-    await api.post(`bookings/${b.id}/cancel`, { reason }); toast('Booking cancelled'); renderBookingDetail(id);
-  };
+    const r = await api.post(`bookings/${b.id}/cancel`, { reason });
+    if (!r.ok) return toast(r.data.message || 'Could not cancel. Please try again.');
+    toast('Booking cancelled'); renderBookingDetail(id);
+  });
 }
 
 // ---- Import ----
@@ -465,17 +526,17 @@ async function renderImport() {
   };
   $('#addRow').onclick = addRow;
   addRow(); addRow();
-  $('#doImport').onclick = async () => {
+  $('#doImport').onclick = busy(async () => {
     const rows = [...$('#impBody').querySelectorAll('tr')].map((tr) => {
       const o = {}; tr.querySelectorAll('[data-f]').forEach((f) => o[f.dataset.f] = f.value); return o;
     }).filter((o) => o.customer_name && o.date);
     if (!rows.length) return toast('Fill at least one row (name + date)');
     const r = await api.post('import', { rows });
-    if (!r.ok) return toast('Import failed');
+    if (!r.ok) return toast(r.data.message || 'Import failed. Please try again.');
     $('#impNote').textContent = `${r.data.created} imported` + (r.data.errors.length ? `, ${r.data.errors.length} skipped` : '');
     toast(`${r.data.created} bookings imported`);
     $('#impBody').innerHTML = ''; addRow();
-  };
+  });
 }
 
 // ---- Settings ----
@@ -508,7 +569,7 @@ async function setMedia() {
       <span class="mono" id="m_status"></span>
     </div>
     <div class="media-grid" id="m_grid"></div>
-    <div class="mono" style="margin-top:10px">Images &amp; videos dono chalte hain. Har banquet ya kisi khaas hall ke liye.</div>
+    <div class="mono" style="margin-top:10px">Both images and videos are supported — for the whole venue or a specific hall.</div>
   </div>`;
   $('#m_pick').onclick = () => $('#m_file').click();
   $('#m_file').onchange = (e) => uploadMedia([...e.target.files]);
@@ -524,7 +585,7 @@ async function renderMediaGrid() {
         : `<img src="${esc(mi.url)}" loading="lazy" alt="">`}
       <div class="media-meta"><span>${esc(hallName(mi.hall_id))}</span>
         <button class="iconbtn sm" data-del="${mi.id}" title="Delete">${ic('i-trash')}</button></div>
-    </div>`).join('') : emptyState('i-upload', 'Abhi koi photo/video nahi. Upload daba kar add karein.');
+    </div>`).join('') : emptyState('i-upload', 'No photos or videos yet. Tap Upload to add some.');
   $('#m_grid').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
     if (!confirm('Remove this file?')) return;
     await api.del('media/' + b.dataset.del); toast('Removed'); renderMediaGrid();
@@ -560,17 +621,18 @@ function setProfile() {
     <label class="fl">Facilities</label><div class="chips" id="s_fac">${v.all_facilities.map((f) => `<span class="chip ${v.facilities.includes(f) ? 'on' : ''}" data-f="${f}">${f}</span>`).join('')}</div>
     ${locationPickerHTML('s', v)}
     <button class="btn btn-pri" id="s_save" style="margin-top:20px">${ic('i-check')}Save changes</button></div>`;
-  initLocationPicker('s', v, () => $('#s_city').value);
+  setupLocationPicker('s', v, () => $('#s_city').value);
   $('#s_fac').querySelectorAll('.chip').forEach((c) => c.onclick = () => c.classList.toggle('on'));
-  $('#s_save').onclick = async () => {
+  $('#s_save').onclick = busy(async () => {
     const facilities = [...$('#s_fac').querySelectorAll('.chip.on')].map((c) => c.dataset.f);
-    await api.patch('venue', {
+    const r = await api.patch('venue', {
       name: $('#s_name').value, phone: $('#s_phone').value, city: $('#s_city').value, area: $('#s_area').value,
       address: $('#s_address').value, capacity_min: Number($('#s_cmin').value) || null, capacity_max: Number($('#s_cmax').value) || null, facilities,
       ...readPicker('s'),
     });
+    if (!r.ok) return toast(r.data.message || 'Could not save. Please try again.');
     VENUE = await api.get('venue'); $('#brandVenue').textContent = VENUE.name; toast('Venue profile saved');
-  };
+  });
 }
 function setHalls() {
   $('#setBody').innerHTML = `<div class="card pad" style="max-width:560px">
@@ -586,11 +648,12 @@ function setHalls() {
     if (!r.ok) return toast(r.data.message || 'Cannot remove');
     VENUE = await api.get('venue'); setHalls(); toast('Hall removed');
   });
-  $('#nh_add').onclick = async () => {
-    if (!$('#nh_name').value.trim()) return toast('Enter a hall name');
-    await api.post('halls', { name: $('#nh_name').value.trim(), capacity: Number($('#nh_cap').value) || null });
+  $('#nh_add').onclick = busy(async () => {
+    if (!$('#nh_name').value.trim()) return toast('Please enter a hall name');
+    const r = await api.post('halls', { name: $('#nh_name').value.trim(), capacity: Number($('#nh_cap').value) || null });
+    if (!r.ok) return toast(r.data.message || 'Could not add this hall. Please try again.');
     VENUE = await api.get('venue'); setHalls(); toast('Hall added');
-  };
+  });
 }
 function setSlots() {
   $('#setBody').innerHTML = `<div class="card pad" style="max-width:560px">
@@ -606,11 +669,12 @@ function setSlots() {
     if (!r.ok) return toast(r.data.message || 'Cannot remove');
     VENUE = await api.get('venue'); setSlots(); toast('Slot removed');
   });
-  $('#ns_add').onclick = async () => {
-    if (!$('#ns_name').value.trim()) return toast('Enter a slot name');
-    await api.post('slots', { name: $('#ns_name').value.trim() });
+  $('#ns_add').onclick = busy(async () => {
+    if (!$('#ns_name').value.trim()) return toast('Please enter a slot name');
+    const r = await api.post('slots', { name: $('#ns_name').value.trim() });
+    if (!r.ok) return toast(r.data.message || 'Could not add this slot. Please try again.');
     VENUE = await api.get('venue'); setSlots(); toast('Slot added');
-  };
+  });
 }
 function setRates() {
   const byHall = VENUE.halls.map((h) => ({ hall: h, rates: VENUE.rates.filter((r) => r.hall_id === h.id) }));
@@ -626,17 +690,18 @@ function setRates() {
   $('#setBody').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
     await api.del('rates/' + b.dataset.del); VENUE = await api.get('venue'); setRates(); toast('Rate removed');
   });
-  $('#nr_add').onclick = async () => {
-    if (!$('#nr_rate').value) return toast('Enter a rate');
-    await api.post('rates', { hall_id: Number($('#nr_hall').value), event_type: $('#nr_event').value, per_head_rate: Number($('#nr_rate').value) });
+  $('#nr_add').onclick = busy(async () => {
+    if (!$('#nr_rate').value) return toast('Please enter a rate');
+    const r = await api.post('rates', { hall_id: Number($('#nr_hall').value), event_type: $('#nr_event').value, per_head_rate: Number($('#nr_rate').value) });
+    if (!r.ok) return toast(r.data.message || 'Could not add this rate. Please try again.');
     VENUE = await api.get('venue'); setRates(); toast('Rate added');
-  };
+  });
 }
 
 // ---- modals ----
 function closeModal() { $('#modal-root').innerHTML = ''; }
-function modal(title, bodyHTML, footHTML) {
-  $('#modal-root').innerHTML = `<div class="overlay"><div class="modal">
+function modal(title, bodyHTML, footHTML, cls = '') {
+  $('#modal-root').innerHTML = `<div class="overlay"><div class="modal ${cls}">
     <div class="modal-h"><h2>${esc(title)}</h2><button class="iconbtn" id="mClose">${ic('i-x')}</button></div>
     <div class="modal-b">${bodyHTML}</div><div class="modal-f">${footHTML}</div></div></div>`;
   $('#mClose').onclick = closeModal;
@@ -681,23 +746,46 @@ function coordLabel(lat, lng) {
 }
 
 // Markup for the picker block; `v` may carry existing latitude/longitude.
+// The heavy map is kept collapsed (and un-initialised) until the user asks for
+// it, so forms open instantly instead of waiting on map tiles to load.
 function locationPickerHTML(prefix, v = {}) {
   const has = v.latitude != null && v.longitude != null;
   return `
-  <label class="fl">Location on map</label>
-  <div class="loc-tools">
-    <input class="field" id="${prefix}_search" placeholder="Search area / address…">
-    <button type="button" class="btn btn-sec btn-sm" id="${prefix}_find">Search</button>
-    <button type="button" class="btn btn-sec btn-sm" id="${prefix}_gps">Use my location</button>
-  </div>
-  <div class="loc-tools">
-    <input class="field" id="${prefix}_gmap" placeholder="…or paste a Google Maps link / coordinates">
-    <button type="button" class="btn btn-sec btn-sm" id="${prefix}_gset">Set</button>
-  </div>
-  <div class="map-wrap" id="${prefix}_map"></div>
-  <div class="loc-coords" id="${prefix}_coords">${has ? coordLabel(v.latitude, v.longitude) : 'Tap the map, drag the pin, or use a button above to set the exact spot.'}</div>
-  <input type="hidden" id="${prefix}_lat" value="${has ? v.latitude : ''}">
-  <input type="hidden" id="${prefix}_lng" value="${has ? v.longitude : ''}">`;
+  <div class="loc-box">
+    ${has ? '' : `<button type="button" class="loc-reveal" id="${prefix}_reveal">
+      <span class="loc-reveal-ic">${ic('i-home')}</span>
+      <span class="loc-reveal-txt"><b>Pin this venue on the map</b><span>Search, use GPS, or paste a Google Maps link — optional</span></span>
+      <span class="loc-reveal-chev">${ic('i-chev-r')}</span></button>`}
+    <div class="loc-inner" id="${prefix}_inner" ${has ? '' : 'hidden'}>
+      <div class="loc-tools">
+        <input class="field" id="${prefix}_search" placeholder="Search area / address…">
+        <button type="button" class="btn btn-sec btn-sm" id="${prefix}_find">Search</button>
+        <button type="button" class="btn btn-sec btn-sm" id="${prefix}_gps">Use my location</button>
+      </div>
+      <div class="loc-tools">
+        <input class="field" id="${prefix}_gmap" placeholder="…or paste a Google Maps link / coordinates">
+        <button type="button" class="btn btn-sec btn-sm" id="${prefix}_gset">Set</button>
+      </div>
+      <div class="map-wrap" id="${prefix}_map"></div>
+      <div class="loc-coords" id="${prefix}_coords">${has ? coordLabel(v.latitude, v.longitude) : 'Tap the map, drag the pin, or use a button above to set the exact spot.'}</div>
+    </div>
+    <input type="hidden" id="${prefix}_lat" value="${has ? v.latitude : ''}">
+    <input type="hidden" id="${prefix}_lng" value="${has ? v.longitude : ''}">
+  </div>`;
+}
+
+// Decide whether to build the map now (existing pin) or defer it behind the
+// reveal button (fresh form) — deferring keeps the form snappy.
+function setupLocationPicker(prefix, v = {}, cityFn = null) {
+  const has = v.latitude != null && v.longitude != null;
+  if (has) return initLocationPicker(prefix, v, cityFn);
+  const reveal = $('#' + prefix + '_reveal');
+  if (!reveal) return;
+  reveal.onclick = () => {
+    reveal.remove();
+    $('#' + prefix + '_inner').hidden = false;
+    initLocationPicker(prefix, v, cityFn);
+  };
 }
 
 // Wire up the Leaflet map after the HTML is in the DOM. `cityFn` (optional)
@@ -834,13 +922,13 @@ function openNewBooking(pre = {}) {
     };
     if (!body.customer_name || !body.date) return toast('Customer name and date are required');
     const r = await api.post('bookings', body);
-    if (r.status === 409) { g('f_avail').innerHTML = `<div class="warn">${ic('i-warn')}${esc(r.data.message || 'Slot already booked.')}</div>`; return; }
-    if (!r.ok) return toast('Error: ' + (r.data.message || r.status));
+    if (r.status === 409) { g('f_avail').innerHTML = `<div class="warn">${ic('i-warn')}${esc(r.data.message || 'This slot is already booked.')}</div>`; return; }
+    if (!r.ok) return toast(r.data.message || 'Could not save this booking. Please try again.');
     closeModal(); toast(status === 'confirmed' ? 'Booking confirmed · WhatsApp sent' : 'Tentative booking saved', status === 'confirmed');
     location.hash = '#/booking/' + r.data.id;
   }
-  $('#b_tent').onclick = () => submit('tentative');
-  $('#b_conf').onclick = () => submit('confirmed');
+  $('#b_tent').onclick = busy(() => submit('tentative'));
+  $('#b_conf').onclick = busy(() => submit('confirmed'));
 }
 
 function openEditBooking(b) {
@@ -855,13 +943,15 @@ function openEditBooking(b) {
   let event = b.event_type;
   $('#e_event').querySelectorAll('.chip').forEach((c) => c.onclick = () => { $('#e_event').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); event = c.dataset.ev; });
   $('#e_cancel').onclick = closeModal;
-  $('#e_save').onclick = async () => {
-    await api.patch('bookings/' + b.id, {
+  $('#e_save').onclick = busy(async () => {
+    if (!$('#e_name').value.trim()) return toast('Customer name is required');
+    const r = await api.patch('bookings/' + b.id, {
       customer_name: $('#e_name').value.trim(), customer_phone: $('#e_phone').value.trim(), event_type: event,
       guest_count: Number($('#e_guests').value) || null, total_amount: Number($('#e_total').value) || 0, notes: $('#e_notes').value.trim() || null,
     });
+    if (!r.ok) return toast(r.data.message || 'Could not update. Please try again.');
     closeModal(); toast('Booking updated'); renderBookingDetail(b.id);
-  };
+  });
 }
 
 function openAddPayment(b) {
@@ -874,18 +964,19 @@ function openAddPayment(b) {
   let method = 'cash';
   $('#p_method').querySelectorAll('.chip').forEach((c) => c.onclick = () => { $('#p_method').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); method = c.dataset.m; });
   $('#p_cancel').onclick = closeModal;
-  $('#p_save').onclick = async () => {
-    const amount = Number($('#p_amt').value); if (!amount || amount <= 0) return toast('Enter an amount');
+  $('#p_save').onclick = busy(async () => {
+    const amount = Number($('#p_amt').value); if (!amount || amount <= 0) return toast('Please enter a valid amount');
     const r = await api.post(`bookings/${b.id}/payments`, { amount, method, paid_on: $('#p_date').value });
-    if (!r.ok) return toast('Error'); closeModal(); toast('Payment added · balance updated'); renderBookingDetail(b.id);
-  };
+    if (!r.ok) return toast(r.data.message || 'Could not add this payment. Please try again.');
+    closeModal(); toast('Payment added · balance updated'); renderBookingDetail(b.id);
+  });
 }
 
 // ---- boot ----
 // Guard: a brand-new venue may have no halls/slots yet.
 function startNewBooking(pre) {
-  if (!VENUE.halls || !VENUE.halls.length) { toast('Pehle ek hall add karein (Settings → Halls)'); location.hash = '#/settings'; return; }
-  if (!VENUE.slots || !VENUE.slots.length) { toast('Pehle slots add karein (Settings → Slots)'); location.hash = '#/settings'; return; }
+  if (!VENUE.halls || !VENUE.halls.length) { toast('Add a hall first (Settings → Halls)'); location.hash = '#/settings'; return; }
+  if (!VENUE.slots || !VENUE.slots.length) { toast('Add slots first (Settings → Slots)'); location.hash = '#/settings'; return; }
   openNewBooking(pre || { date: todayISO(), hall: VENUE.halls[0].id, slot: VENUE.slots[0].id });
 }
 
@@ -894,7 +985,7 @@ function startApp() {
   $('#brandVenue').textContent = VENUE.name;
   $('#newBtn').onclick = () => startNewBooking();
   const lb = $('#logoutBtn');
-  if (ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = backToAdmin; }
+  if (ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = busy(backToAdmin); }
   else lb.onclick = () => { if (confirm('Log out?')) logout(); };
   if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); }); listenerSet = true; }
   if (!location.hash) location.hash = '#/home';
