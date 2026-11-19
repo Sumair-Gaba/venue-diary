@@ -109,8 +109,8 @@ const busy = (fn) => (e) => withBusy(e.currentTarget, () => fn(e));
 function sessionExpired() {
   if (!TOKEN) return;           // already signed out
   TOKEN = null; localStorage.removeItem('vd_token');
-  ADMIN_VENUE = null; VENUE = null; ME = null;
-  closeModal();
+  ADMIN_VENUE = null; VENUE = null; ME = null; ALERTS = [];
+  closeModal(); closeNotif();
   toast('Your session has expired. Please sign in again.');
   location.hash = '#/home'; renderLogin();
 }
@@ -232,6 +232,7 @@ async function enterApp() {
 }
 function logout() {
   TOKEN = null; localStorage.removeItem('vd_token');
+  closeNotif(); ALERTS = [];
   location.hash = '#/home'; renderLogin();
 }
 
@@ -416,7 +417,6 @@ async function route() {
 async function renderHome() {
   setNav('home');
   const d = await api.get('dashboard');
-  const alerts = featureOn('notifications') ? await api.get('notifications') : [];
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const pctCollected = d.confTotal ? Math.round(d.received / d.confTotal * 100) : 0;
@@ -424,7 +424,6 @@ async function renderHome() {
   $('#view').innerHTML = `
     <div class="page-h"><div><h1>${greet}</h1><div class="sub">${esc(VENUE.name)} · ${fmtDate(d.today)}</div></div>
       <button class="btn btn-pri" id="hNew">${ic('i-plus')}New booking</button></div>
-    ${alertsCardHTML(alerts)}
     <div class="kpis">
       ${kpi('i-cal', d.todays.length, 'Events today')}
       ${kpi('i-book', d.weekCount, 'Bookings this week')}
@@ -454,17 +453,41 @@ async function renderHome() {
   $('#todayList').innerHTML = d.todays.length ? d.todays.map((b) => rowBooking(b)).join('') : emptyState('i-cal', 'No events scheduled for today.');
   $('#baqList').innerHTML = d.outstanding.length ? d.outstanding.slice(0, 6).map((b) => rowBooking(b, true)).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
-  $('#alertList') && $('#alertList').querySelectorAll('.alert-open[data-id]').forEach((e) => e.onclick = () => (location.hash = '#/booking/' + e.dataset.id));
 }
 
-// Dashboard alert feed (auto-generated reminders with one-tap WhatsApp/SMS).
-function alertsCardHTML(alerts) {
-  if (!featureOn('notifications')) return '';
-  const body = alerts.length
-    ? alerts.map((a) => alertRowHTML(a)).join('')
-    : emptyState('i-check', "No alerts right now — you're all caught up.");
-  return `<div class="card pad" style="margin-bottom:16px"><div class="card-h"><h3>Alerts &amp; reminders</h3><span class="mono">${alerts.length} active</span></div><div id="alertList">${body}</div></div>`;
+// ---- notification bell + dropdown ----
+// Alerts live behind a bell icon (with an unread count), not a dashboard card.
+let ALERTS = [];
+let bellOpen = false;
+async function loadAlerts() {
+  if (!featureOn('notifications')) { ALERTS = []; return updateBell(); }
+  try { ALERTS = (await api.get('notifications')) || []; } catch { ALERTS = []; }
+  updateBell();
 }
+function updateBell() {
+  const bell = $('#bellBtn'), badge = $('#bellBadge');
+  if (!bell) return;
+  bell.hidden = !featureOn('notifications');
+  if (badge) { badge.textContent = ALERTS.length > 9 ? '9+' : String(ALERTS.length); badge.hidden = !ALERTS.length; }
+  if (bellOpen && $('#notifList'))
+    $('#notifList').innerHTML = ALERTS.length ? ALERTS.map((a) => alertRowHTML(a)).join('') : emptyState('i-check', "You're all caught up.");
+}
+async function toggleNotif() {
+  if (bellOpen) return closeNotif();
+  await loadAlerts();
+  const list = ALERTS.length ? ALERTS.map((a) => alertRowHTML(a)).join('') : emptyState('i-check', "You're all caught up.");
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="notif-overlay" id="notifOv"></div>
+    <div class="notif-panel" id="notifPanel">
+      <div class="card-h"><h3>Alerts &amp; reminders</h3><span class="mono">${ALERTS.length} active</span></div>
+      <div id="notifList">${list}</div>
+    </div>`);
+  bellOpen = true;
+  $('#notifOv').onclick = closeNotif;
+  $('#notifPanel').querySelectorAll('.alert-open[data-id]').forEach((e) => e.onclick = () => { closeNotif(); location.hash = '#/booking/' + e.dataset.id; });
+}
+function closeNotif() { $('#notifOv') && $('#notifOv').remove(); $('#notifPanel') && $('#notifPanel').remove(); bellOpen = false; }
+
 function alertRowHTML(a) {
   const when = a.date ? fmtDate(a.date) : '';
   const extra = a.type === 'balance' && a.amount ? ' · ' + fmt(a.amount) : '';
@@ -1352,12 +1375,15 @@ function startApp() {
   $('#login').innerHTML = ''; $('#app').hidden = false;
   $('#brandVenue').textContent = VENUE.name;
   applyFeatureNav();
+  const bell = $('#bellBtn');
+  if (bell) bell.onclick = toggleNotif;
+  loadAlerts();
   $('#newBtn').onclick = () => startNewBooking();
   const lb = $('#logoutBtn');
   // "Back to Admin" is only ever for an admin who opened a banquet — never for owners.
   if (ME?.role === 'admin' && ADMIN_VENUE) { lb.innerHTML = ic('i-chev-l') + 'Back to Admin'; lb.onclick = busy(backToAdmin); }
   else { lb.innerHTML = ic('i-logout') + 'Log out'; lb.onclick = () => { if (confirm('Log out?')) logout(); }; }
-  if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); }); listenerSet = true; }
+  if (!listenerSet) { window.addEventListener('hashchange', route); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeNotif(); } }); listenerSet = true; }
   if (!location.hash) location.hash = '#/home';
   route();
 }

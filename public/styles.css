@@ -251,6 +251,16 @@ textarea.field{height:auto;padding:9px 12px;resize:vertical;min-height:58px;line
 .alert-row.sev-info .alert-dot{background:var(--accent)}
 .alert-actions{display:flex;gap:6px;flex:none}
 .alert-actions .iconbtn.sm{color:var(--muted)} .alert-actions .iconbtn.sm:hover{color:var(--ink)}
+/* notification bell + dropdown */
+.brand-txt{min-width:0}
+.bell{position:relative;margin-left:auto;width:32px;height:32px;border-radius:8px;border:none;background:transparent;color:var(--muted);display:grid;place-items:center;flex:none}
+.bell:hover{background:var(--hover);color:var(--ink)} .bell svg{width:18px;height:18px}
+.bell-badge{position:absolute;top:-1px;right:-1px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--rose);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;line-height:1;border:2px solid var(--sidebar)}
+.notif-overlay{position:fixed;inset:0;z-index:150}
+.notif-panel{position:fixed;top:52px;left:14px;width:330px;max-width:calc(100vw - 28px);max-height:72vh;overflow:auto;z-index:160;
+  background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh-pop);padding:4px 14px 12px}
+.notif-panel .card-h{position:sticky;top:0;background:var(--paper);margin:0;padding:12px 0 8px;border-bottom:1px solid var(--line2)}
+.notif-panel .alert-row:first-of-type{padding-top:12px}
 .bar{height:6px;border-radius:999px;background:var(--line);overflow:hidden;margin-top:12px}
 .bar>i{display:block;height:100%;background:var(--accent);border-radius:999px}
 
