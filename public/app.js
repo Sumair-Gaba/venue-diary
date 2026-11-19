@@ -180,8 +180,10 @@ function registerBanquetModal() {
     <label class="fl">Address</label><input class="field" id="rb_address" placeholder="Street, landmark">
     <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="rb_cmin"></div>
       <div><label class="fl">Max capacity</label><input class="field" type="number" id="rb_cmax"></div></div>
+    ${locationPickerHTML('rb')}
     <div class="mono" style="margin-top:10px">Owner is apne phone (OTP) se login kar ke yeh dashboard dekhega.</div>`,
     `<button class="btn btn-sec" id="rb_cancel">Cancel</button><button class="btn btn-pri" id="rb_save">${ic('i-check')}Register</button>`);
+  initLocationPicker('rb', {}, () => $('#rb_city').value);
   $('#rb_cancel').onclick = closeModal;
   $('#rb_save').onclick = async () => {
     const name = $('#rb_name').value.trim(), phone = $('#rb_ophone').value.trim();
@@ -191,6 +193,7 @@ function registerBanquetModal() {
       name, owner_name: $('#rb_oname').value.trim(), owner_phone: phone,
       city: $('#rb_city').value.trim(), area: $('#rb_area').value.trim(), address: $('#rb_address').value.trim(),
       capacity_min: Number($('#rb_cmin').value) || null, capacity_max: Number($('#rb_cmax').value) || null,
+      ...readPicker('rb'),
     });
     if (!r.ok) return toast(r.data.message || 'Could not register');
     closeModal(); toast('Banquet registered'); renderAdmin();
@@ -555,13 +558,16 @@ function setProfile() {
     <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="s_cmin" value="${v.capacity_min || ''}"></div>
       <div><label class="fl">Max capacity</label><input class="field" type="number" id="s_cmax" value="${v.capacity_max || ''}"></div></div>
     <label class="fl">Facilities</label><div class="chips" id="s_fac">${v.all_facilities.map((f) => `<span class="chip ${v.facilities.includes(f) ? 'on' : ''}" data-f="${f}">${f}</span>`).join('')}</div>
+    ${locationPickerHTML('s', v)}
     <button class="btn btn-pri" id="s_save" style="margin-top:20px">${ic('i-check')}Save changes</button></div>`;
+  initLocationPicker('s', v, () => $('#s_city').value);
   $('#s_fac').querySelectorAll('.chip').forEach((c) => c.onclick = () => c.classList.toggle('on'));
   $('#s_save').onclick = async () => {
     const facilities = [...$('#s_fac').querySelectorAll('.chip.on')].map((c) => c.dataset.f);
     await api.patch('venue', {
       name: $('#s_name').value, phone: $('#s_phone').value, city: $('#s_city').value, area: $('#s_area').value,
       address: $('#s_address').value, capacity_min: Number($('#s_cmin').value) || null, capacity_max: Number($('#s_cmax').value) || null, facilities,
+      ...readPicker('s'),
     });
     VENUE = await api.get('venue'); $('#brandVenue').textContent = VENUE.name; toast('Venue profile saved');
   };
@@ -635,6 +641,152 @@ function modal(title, bodyHTML, footHTML) {
     <div class="modal-b">${bodyHTML}</div><div class="modal-f">${footHTML}</div></div></div>`;
   $('#mClose').onclick = closeModal;
   $('.overlay').onclick = (e) => { if (e.target.classList.contains('overlay')) closeModal(); };
+}
+
+// ---- location map picker (Leaflet + OpenStreetMap, free, no API key) -------
+const PK_CENTER = [30.3753, 69.3451]; // geographic centre of Pakistan
+const CITY_CENTERS = {
+  lahore: [31.5204, 74.3587], karachi: [24.8607, 67.0011], islamabad: [33.6844, 73.0479],
+  rawalpindi: [33.5651, 73.0169], faisalabad: [31.4504, 73.1350], multan: [30.1575, 71.5249],
+  peshawar: [34.0151, 71.5249], quetta: [30.1798, 66.9750], gujranwala: [32.1877, 74.1945],
+  sialkot: [32.4945, 74.5229], hyderabad: [25.3960, 68.3578], bahawalpur: [29.3956, 71.6836],
+  sargodha: [32.0836, 72.6711], abbottabad: [34.1688, 73.2215], gujrat: [32.5731, 74.0789],
+};
+const gmapsLink = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`;
+const _mapPickers = {}; // prefix -> { map, marker }
+
+// Pull coordinates out of a pasted Google Maps URL or a plain "lat, lng" string.
+// (Short goo.gl / maps.app.goo.gl links redirect server-side and can't be read here.)
+function parseCoords(text) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  const pats = [
+    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,        // .../@31.52,74.35,15z
+    /[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,    // ...?q=31.52,74.35
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,        // ...!3d31.52!4d74.35
+    /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/, // plain "31.52, 74.35"
+  ];
+  for (const re of pats) {
+    const m = s.match(re);
+    if (m) {
+      const lat = Number(m[1]), lng = Number(m[2]);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng];
+    }
+  }
+  return null;
+}
+
+function coordLabel(lat, lng) {
+  return `Pin set at <b>${(+lat).toFixed(5)}, ${(+lng).toFixed(5)}</b> · <a href="${gmapsLink(lat, lng)}" target="_blank" rel="noopener">View on Google Maps ↗</a>`;
+}
+
+// Markup for the picker block; `v` may carry existing latitude/longitude.
+function locationPickerHTML(prefix, v = {}) {
+  const has = v.latitude != null && v.longitude != null;
+  return `
+  <label class="fl">Location on map</label>
+  <div class="loc-tools">
+    <input class="field" id="${prefix}_search" placeholder="Search area / address…">
+    <button type="button" class="btn btn-sec btn-sm" id="${prefix}_find">Search</button>
+    <button type="button" class="btn btn-sec btn-sm" id="${prefix}_gps">Use my location</button>
+  </div>
+  <div class="loc-tools">
+    <input class="field" id="${prefix}_gmap" placeholder="…or paste a Google Maps link / coordinates">
+    <button type="button" class="btn btn-sec btn-sm" id="${prefix}_gset">Set</button>
+  </div>
+  <div class="map-wrap" id="${prefix}_map"></div>
+  <div class="loc-coords" id="${prefix}_coords">${has ? coordLabel(v.latitude, v.longitude) : 'Tap the map, drag the pin, or use a button above to set the exact spot.'}</div>
+  <input type="hidden" id="${prefix}_lat" value="${has ? v.latitude : ''}">
+  <input type="hidden" id="${prefix}_lng" value="${has ? v.longitude : ''}">`;
+}
+
+// Wire up the Leaflet map after the HTML is in the DOM. `cityFn` (optional)
+// returns the current city text, so a fresh venue centres on the right city.
+function initLocationPicker(prefix, v = {}, cityFn = null) {
+  const mapEl = $('#' + prefix + '_map');
+  if (!mapEl) return;
+  if (!window.L) { // Leaflet (CDN) unavailable — keep manual paste/coords working.
+    mapEl.innerHTML = '<div class="map-fallback">Map could not load (offline?). You can still paste a Google Maps link or coordinates above.</div>';
+    wireCoordButtons(prefix, null, v, cityFn);
+    return;
+  }
+  if (_mapPickers[prefix]?.map) { try { _mapPickers[prefix].map.remove(); } catch {} }
+
+  const has = v.latitude != null && v.longitude != null;
+  const city = (cityFn ? cityFn() : v.city || '').trim().toLowerCase();
+  const start = has ? [+v.latitude, +v.longitude] : (CITY_CENTERS[city] || PK_CENTER);
+  const zoom = has ? 16 : (CITY_CENTERS[city] ? 12 : 5);
+
+  const map = L.map(mapEl, { scrollWheelZoom: false }).setView(start, zoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap',
+  }).addTo(map);
+
+  let marker = has ? L.marker(start, { draggable: true }).addTo(map) : null;
+  const rec = _mapPickers[prefix] = { map, marker };
+
+  const setPoint = (lat, lng, recenter = true) => {
+    if (!rec.marker) { rec.marker = L.marker([lat, lng], { draggable: true }).addTo(map); rec.marker.on('dragend', () => { const p = rec.marker.getLatLng(); commit(p.lat, p.lng, false); }); }
+    else rec.marker.setLatLng([lat, lng]);
+    if (recenter) map.setView([lat, lng], Math.max(map.getZoom(), 15));
+    commit(lat, lng);
+  };
+  const commit = (lat, lng) => {
+    $('#' + prefix + '_lat').value = lat;
+    $('#' + prefix + '_lng').value = lng;
+    $('#' + prefix + '_coords').innerHTML = coordLabel(lat, lng);
+  };
+  if (marker) marker.on('dragend', () => { const p = marker.getLatLng(); commit(p.lat, p.lng); });
+  map.on('click', (e) => setPoint(e.latlng.lat, e.latlng.lng, false));
+
+  // Leaflet mis-sizes when its container was hidden (modal/tab) at creation.
+  setTimeout(() => map.invalidateSize(), 60);
+  setTimeout(() => map.invalidateSize(), 250);
+
+  wireCoordButtons(prefix, setPoint, v, cityFn);
+}
+
+function wireCoordButtons(prefix, setPoint, v, cityFn) {
+  const coordsBox = $('#' + prefix + '_coords');
+  const apply = (lat, lng) => {
+    if (setPoint) setPoint(lat, lng);
+    else { $('#' + prefix + '_lat').value = lat; $('#' + prefix + '_lng').value = lng; coordsBox.innerHTML = coordLabel(lat, lng); }
+  };
+  $('#' + prefix + '_gps').onclick = () => {
+    if (!navigator.geolocation) return toast('Location not supported on this device');
+    coordsBox.textContent = 'Finding your location…';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => apply(pos.coords.latitude, pos.coords.longitude),
+      () => { coordsBox.textContent = 'Could not get your location. Allow location access, or tap the map.'; },
+      { enableHighAccuracy: true, timeout: 10000 });
+  };
+  $('#' + prefix + '_gset').onclick = () => {
+    const c = parseCoords($('#' + prefix + '_gmap').value);
+    if (!c) return toast('Paste a Google Maps link with coordinates, or "lat, lng"');
+    apply(c[0], c[1]);
+  };
+  const doSearch = async () => {
+    const qstr = $('#' + prefix + '_search').value.trim();
+    if (!qstr) return;
+    const direct = parseCoords(qstr);
+    if (direct) return apply(direct[0], direct[1]);
+    coordsBox.textContent = 'Searching…';
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pk&q=' + encodeURIComponent(qstr);
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const j = await r.json();
+      if (!j.length) { coordsBox.textContent = 'No match. Try a nearby landmark, or tap the map.'; return; }
+      apply(Number(j[0].lat), Number(j[0].lon));
+    } catch { coordsBox.textContent = 'Search failed. Tap the map to set the pin instead.'; }
+  };
+  $('#' + prefix + '_find').onclick = doSearch;
+  $('#' + prefix + '_search').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } };
+}
+
+// Read the chosen coordinates back out (for saving).
+function readPicker(prefix) {
+  const lat = $('#' + prefix + '_lat').value, lng = $('#' + prefix + '_lng').value;
+  return { latitude: lat === '' ? null : Number(lat), longitude: lng === '' ? null : Number(lng) };
 }
 
 function openNewBooking(pre = {}) {
