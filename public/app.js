@@ -337,6 +337,7 @@ async function route() {
     if (page === 'calendar') return await renderCalendar();
     if (page === 'bookings') return await renderBookings();
     if (page === 'payments') return await renderPayments();
+    if (page === 'calculator') return await renderCalculator();
     if (page === 'import') return await renderImport();
     if (page === 'settings') return await renderSettings();
     if (page === 'booking') return await renderBookingDetail(arg);
@@ -514,6 +515,157 @@ async function renderPayments() {
         <div class="dt">${fmtDate(b.event_date)} · received ${fmt(b.paid)} of ${fmt(b.total_amount)}</div></div>
       <div class="amt" style="color:var(--amber-txt)">${fmt(b.balance)}</div></div>`).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
+}
+
+// ---- Calculator (quote estimator) ----
+// A standalone quote tool: price a function per head (one rate) OR per dish
+// (a menu where each dish adds to the per-head rate), add fixed charges and a
+// discount, then turn the estimate straight into a booking or copy it to share.
+let calcMode = 'head';
+async function renderCalculator() {
+  setNav('calculator');
+  const evOpts = EVENTS.map((e) => `<option>${e}</option>`).join('');
+  $('#view').innerHTML = `
+    <div class="page-h"><div><h1>Rate calculator</h1><div class="sub">Quick quote — per head or per dish menu</div></div></div>
+    <div class="grid" style="grid-template-columns:1fr 340px;align-items:start">
+      <div class="card pad">
+        <div class="tabs">
+          <button class="tab ${calcMode === 'head' ? 'on' : ''}" data-mode="head">Per head</button>
+          <button class="tab ${calcMode === 'dish' ? 'on' : ''}" data-mode="dish">Per dish (menu)</button>
+        </div>
+        <div class="two">
+          <div><label class="fl">Guests</label><input class="field" type="number" id="c_guests" placeholder="450"></div>
+          <div><label class="fl">Event type</label><select class="field" id="c_event"><option value="">—</option>${evOpts}</select></div>
+        </div>
+        <div id="c_modebody"></div>
+        <div class="form-sec">Extra / fixed charges</div>
+        <div id="c_extras"></div>
+        <button type="button" class="btn btn-sec btn-sm" id="c_addextra" style="margin-top:6px">${ic('i-plus')}Add charge</button>
+        <div class="two" style="margin-top:16px">
+          <div><label class="fl">Discount (Rs)</label><input class="field" type="number" id="c_disc" placeholder="0"></div>
+          <div><label class="fl">Advance received</label><input class="field" type="number" id="c_adv" placeholder="0"></div>
+        </div>
+      </div>
+      <div class="card pad calc-sum">
+        <div class="card-h"><h3>Estimate</h3></div>
+        <div id="c_breakdown"></div>
+        <div class="totbox"><span class="k">GRAND TOTAL</span><span class="v" id="c_total">Rs 0</span></div>
+        <div class="pr" style="margin-top:8px"><span class="k">Per head (effective)</span><span class="v" id="c_perhead">Rs 0</span></div>
+        <button class="btn btn-pri" id="c_book" style="width:100%;margin-top:14px">${ic('i-plus')}Create booking from quote</button>
+        <button class="btn btn-sec" id="c_copy" style="width:100%;margin-top:8px">${ic('i-wa')}Copy quote text</button>
+      </div>
+    </div>`;
+
+  const g = (id) => $('#' + id);
+
+  // Read the whole form into a tidy numbers object.
+  function compute() {
+    const guests = Number(g('c_guests').value) || 0;
+    let perHead = 0, dishes = [];
+    if (calcMode === 'head') perHead = Number(g('c_rate')?.value) || 0;
+    else {
+      dishes = [...$('#c_dishes').querySelectorAll('.calc-row')].map((r) => {
+        const i = r.querySelectorAll('input');
+        return { name: i[0].value.trim(), price: Number(i[1].value) || 0 };
+      }).filter((d) => d.name || d.price);
+      perHead = dishes.reduce((s, d) => s + d.price, 0);
+    }
+    const perHeadSub = perHead * guests;
+    const extras = [...$('#c_extras').querySelectorAll('.calc-row')].map((r) => {
+      const i = r.querySelectorAll('input');
+      return { name: i[0].value.trim() || 'Charge', amt: Number(i[1].value) || 0 };
+    }).filter((e) => e.amt);
+    const extrasTotal = extras.reduce((s, e) => s + e.amt, 0);
+    const discount = Number(g('c_disc').value) || 0;
+    const grand = Math.max(0, perHeadSub + extrasTotal - discount);
+    const advance = Number(g('c_adv').value) || 0;
+    return { guests, perHead, perHeadSub, dishes, extras, extrasTotal, discount, grand, advance, balance: grand - advance, eff: guests ? grand / guests : 0 };
+  }
+
+  function recalc() {
+    const c = compute();
+    const rows = [
+      ['Per-head rate', fmt(c.perHead)],
+      [`Guests × rate (${c.guests} × ${fmt(c.perHead)})`, fmt(c.perHeadSub)],
+      ...c.extras.map((e) => [esc(e.name), fmt(e.amt)]),
+    ];
+    if (c.discount) rows.push(['Discount', '− ' + fmt(c.discount)]);
+    if (c.advance) { rows.push(['Advance received', '− ' + fmt(c.advance)]); rows.push(['Balance', fmt(c.balance)]); }
+    $('#c_breakdown').innerHTML = rows.map(([k, v]) => `<div class="pr"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+    g('c_total').textContent = fmt(c.grand);
+    g('c_perhead').textContent = fmt(Math.round(c.eff));
+  }
+
+  // Fill the per-head rate from saved rate plans when hall + event are chosen.
+  function autofillRate() {
+    const hall = Number(g('c_hall')?.value), ev = g('c_event').value;
+    if (!hall || !ev) return;
+    const rp = VENUE.rates.find((r) => r.hall_id === hall && r.event_type === ev);
+    if (rp) g('c_rate').value = rp.per_head_rate;
+  }
+
+  // Per-head vs per-dish inputs.
+  function renderMode() {
+    const b = $('#c_modebody');
+    if (calcMode === 'head') {
+      const hallOpts = VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('');
+      b.innerHTML = `<div class="two">
+        <div><label class="fl">Hall (for rate)</label><select class="field" id="c_hall"><option value="">—</option>${hallOpts}</select></div>
+        <div><label class="fl">Per-head rate (Rs)</label><input class="field" type="number" id="c_rate" placeholder="2800"></div>
+      </div><div class="mono" style="margin-top:6px;color:var(--muted)">Pick hall + event to auto-fill the rate from your saved rates.</div>`;
+      g('c_hall').onchange = () => { autofillRate(); recalc(); };
+      g('c_rate').oninput = recalc;
+    } else {
+      b.innerHTML = `<label class="fl">Menu dishes — price per head</label><div id="c_dishes"></div>
+        <button type="button" class="btn btn-sec btn-sm" id="c_adddish" style="margin-top:6px">${ic('i-plus')}Add dish</button>
+        <div class="mono" style="margin-top:6px;color:var(--muted)">Menu per-head = total of every dish price.</div>`;
+      const addDish = (n = '', p = '') => addRow('#c_dishes', 'Dish (e.g. Chicken Karahi)', 'Rs/head', 110, n, p);
+      g('c_adddish').onclick = () => addDish();
+      addDish(); addDish();
+    }
+    recalc();
+  }
+
+  // Shared add-row builder for dishes and extra charges.
+  function addRow(container, ph1, ph2, w2, v1 = '', v2 = '') {
+    const row = el({ className: 'inline-add calc-row' });
+    row.style.marginTop = '8px';
+    row.innerHTML = `<input class="field" placeholder="${ph1}" value="${esc(v1)}">
+      <input class="field" type="number" placeholder="${ph2}" style="max-width:${w2}px" value="${esc(v2)}">
+      <button type="button" class="iconbtn" title="Remove">${ic('i-x')}</button>`;
+    row.querySelector('button').onclick = () => { row.remove(); recalc(); };
+    row.querySelectorAll('input').forEach((i) => i.oninput = recalc);
+    $(container).append(row);
+  }
+
+  function createBookingFromQuote() {
+    if (!VENUE.halls.length) { toast('Add a hall first (Settings → Halls)'); return; }
+    if (!VENUE.slots.length) { toast('Add slots first (Settings → Slots)'); return; }
+    const c = compute();
+    const hall = (calcMode === 'head' && g('c_hall')?.value) ? Number(g('c_hall').value) : VENUE.halls[0].id;
+    openNewBooking({ date: todayISO(), hall, slot: VENUE.slots[0].id, guests: c.guests || null, rate: c.perHead || null, event: g('c_event').value || null });
+  }
+
+  async function copyQuote() {
+    const c = compute();
+    const lines = [`${VENUE.name} — Estimate`, '', `Guests: ${c.guests}`];
+    if (calcMode === 'dish' && c.dishes.length) lines.push('Menu: ' + c.dishes.map((d) => d.name).filter(Boolean).join(', '));
+    lines.push(`Per head: ${fmt(c.perHead)}`, `Food (guests × rate): ${fmt(c.perHeadSub)}`);
+    c.extras.forEach((e) => lines.push(`${e.name}: ${fmt(e.amt)}`));
+    if (c.discount) lines.push(`Discount: − ${fmt(c.discount)}`);
+    lines.push(`Total: ${fmt(c.grand)}`);
+    if (c.advance) lines.push(`Advance: ${fmt(c.advance)}`, `Balance: ${fmt(c.balance)}`);
+    try { await navigator.clipboard.writeText(lines.join('\n')); toast('Quote copied — paste into WhatsApp'); }
+    catch { toast('Could not copy on this device'); }
+  }
+
+  $('#view').querySelectorAll('.tab[data-mode]').forEach((t) => t.onclick = () => { calcMode = t.dataset.mode; renderCalculator(); });
+  g('c_addextra').onclick = () => addRow('#c_extras', 'e.g. Decoration', 'Amount', 130);
+  ['c_guests', 'c_disc', 'c_adv'].forEach((id) => g(id).oninput = recalc);
+  g('c_event').onchange = () => { autofillRate(); recalc(); };
+  g('c_book').onclick = () => createBookingFromQuote();
+  g('c_copy').onclick = () => copyQuote();
+  renderMode();
 }
 
 // ---- Booking detail ----
@@ -1021,6 +1173,11 @@ function openNewBooking(pre = {}) {
       : `<div class="warn">${ic('i-warn')}This slot already has a ${data.conflict?.type === 'block' ? 'block' : 'confirmed booking'}${data.conflict?.customer_name ? ' (' + esc(data.conflict.customer_name) + ')' : ''}. You can still save it as tentative.</div>`;
   }
   ['f_hall', 'f_slot', 'f_date'].forEach((id) => g(id).onchange = () => { autofillRate(); checkAvail(); });
+  // Prefill from the rate calculator ("Create booking from quote").
+  if (st.event) { const chip = [...g('f_event').querySelectorAll('.chip')].find((c) => c.dataset.ev === st.event); if (chip) chip.classList.add('on'); }
+  if (st.guests) g('f_guests').value = st.guests;
+  if (st.rate) g('f_rate').value = st.rate;
+  if (st.guests || st.rate) recalc();
   if (st.date) checkAvail();
   async function submit(status) {
     const body = {
