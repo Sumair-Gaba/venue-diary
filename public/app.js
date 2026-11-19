@@ -43,6 +43,24 @@ const fmtDate = (iso) => new Date(iso + 'T00:00').toLocaleDateString('en-GB', { 
 const cap = (s) => s ? s[0].toUpperCase() + s.slice(1) : '';
 const slugify = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const originBase = () => location.origin.replace(/\/$/, '');
+
+// ---- customer messaging (free, no paid API — opens the owner's own app) ----
+// WhatsApp uses wa.me (country code, no +); SMS uses the sms: URI. Both open a
+// prefilled message the owner reviews and sends. Automated sending would need a
+// paid provider (Twilio / WhatsApp Business API) — not wired here.
+const phoneDigits = (p) => String(p || '').replace(/\D/g, '');
+const waLink = (phone, text) => `https://wa.me/${phoneDigits(phone)}?text=${encodeURIComponent(text)}`;
+const smsLink = (phone, text) => `sms:${String(phone || '').replace(/[^\d+]/g, '')}?body=${encodeURIComponent(text)}`;
+const venueName = () => (VENUE && VENUE.name) || 'our venue';
+const msgBalance = (name, date, amount) => `Hello ${name || ''}, a reminder from ${venueName()}: your booking on ${date} has a pending balance of ${fmt(amount)}. Kindly clear it at your convenience. Thank you.`;
+const msgEvent = (name, date, hall) => `Hello ${name || ''}, a reminder from ${venueName()}: your event is on ${date}${hall ? ' at ' + hall : ''}. We look forward to hosting you.`;
+const msgTentative = (name, date) => `Hello ${name || ''}, regarding your tentative booking on ${date} with ${venueName()} — please confirm at your convenience so we can hold the date for you.`;
+function alertMsg(a) {
+  if (a.type === 'balance') return msgBalance(a.name, a.date, a.amount);
+  if (a.type === 'event_today' || a.type === 'event_tomorrow') return msgEvent(a.name, a.date, a.hall);
+  if (a.type === 'tentative') return msgTentative(a.name, a.date);
+  return `Hello ${a.name || ''}, a message from ${venueName()}.`;
+}
 const pill = (status) => `<span class="pill p-${status}"><span class="dt"></span>${cap(status)}</span>`;
 const kpi = (icon, n, label) => `<div class="kpi"><div class="ico">${ic(icon)}</div><div class="kmeta"><div class="n">${n}</div><div class="l">${label}</div></div></div>`;
 const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><span>${esc(text)}</span></div>`;
@@ -398,6 +416,7 @@ async function route() {
 async function renderHome() {
   setNav('home');
   const d = await api.get('dashboard');
+  const alerts = featureOn('notifications') ? await api.get('notifications') : [];
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const pctCollected = d.confTotal ? Math.round(d.received / d.confTotal * 100) : 0;
@@ -405,6 +424,7 @@ async function renderHome() {
   $('#view').innerHTML = `
     <div class="page-h"><div><h1>${greet}</h1><div class="sub">${esc(VENUE.name)} · ${fmtDate(d.today)}</div></div>
       <button class="btn btn-pri" id="hNew">${ic('i-plus')}New booking</button></div>
+    ${alertsCardHTML(alerts)}
     <div class="kpis">
       ${kpi('i-cal', d.todays.length, 'Events today')}
       ${kpi('i-book', d.weekCount, 'Bookings this week')}
@@ -434,6 +454,28 @@ async function renderHome() {
   $('#todayList').innerHTML = d.todays.length ? d.todays.map((b) => rowBooking(b)).join('') : emptyState('i-cal', 'No events scheduled for today.');
   $('#baqList').innerHTML = d.outstanding.length ? d.outstanding.slice(0, 6).map((b) => rowBooking(b, true)).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
+  $('#alertList') && $('#alertList').querySelectorAll('.alert-open[data-id]').forEach((e) => e.onclick = () => (location.hash = '#/booking/' + e.dataset.id));
+}
+
+// Dashboard alert feed (auto-generated reminders with one-tap WhatsApp/SMS).
+function alertsCardHTML(alerts) {
+  if (!featureOn('notifications')) return '';
+  const body = alerts.length
+    ? alerts.map((a) => alertRowHTML(a)).join('')
+    : emptyState('i-check', "No alerts right now — you're all caught up.");
+  return `<div class="card pad" style="margin-bottom:16px"><div class="card-h"><h3>Alerts &amp; reminders</h3><span class="mono">${alerts.length} active</span></div><div id="alertList">${body}</div></div>`;
+}
+function alertRowHTML(a) {
+  const when = a.date ? fmtDate(a.date) : '';
+  const extra = a.type === 'balance' && a.amount ? ' · ' + fmt(a.amount) : '';
+  const actions = a.phone ? `
+    <a class="iconbtn sm" title="Send on WhatsApp" href="${waLink(a.phone, alertMsg(a))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${ic('i-wa')}</a>
+    <a class="iconbtn sm" title="Send SMS" href="${smsLink(a.phone, alertMsg(a))}" onclick="event.stopPropagation()">${ic('i-chat')}</a>` : '';
+  return `<div class="alert-row sev-${esc(a.severity)}">
+    <span class="alert-dot"></span>
+    <div class="grow alert-open" ${a.booking_id ? `data-id="${a.booking_id}" style="cursor:pointer"` : ''}>
+      <div class="nm">${esc(a.title)}</div><div class="dt">${esc(a.text)}${extra}${when ? ' · ' + when : ''}</div></div>
+    <div class="alert-actions">${actions}</div></div>`;
 }
 // Venue photo gallery for the dashboard (uses VENUE.media loaded with the venue).
 function galleryCardHTML() {
@@ -731,6 +773,7 @@ async function renderBookingDetail(id) {
         <div class="row"><div class="grow mono">Date · Slot</div><b>${fmtDate(b.event_date)} · ${esc(b.slot_name)}</b></div>
         <div class="row"><div class="grow mono">Hall</div><b>${esc(b.hall_name)}</b></div>
         <div class="row"><div class="grow mono">Guests</div><b>${b.guest_count || '—'}</b></div>
+        ${b.requirements ? `<div class="row"><div class="grow mono">Requirements</div><b style="max-width:60%;text-align:right">${esc(b.requirements)}</b></div>` : ''}
         ${b.notes ? `<div class="row"><div class="grow mono">Notes</div><b style="max-width:60%;text-align:right">${esc(b.notes)}</b></div>` : ''}
         <div class="card-h" style="margin-top:22px"><h3>Payments</h3><button class="btn btn-sec btn-sm" id="addPay">${ic('i-plus')}Add payment</button></div>
         <div id="payList"></div>
@@ -743,6 +786,7 @@ async function renderBookingDetail(id) {
           <div class="pr tot"><span class="k">Balance</span><span class="v">${fmt(b.balance)}</span></div>
           <div class="bar"><i style="width:${pct}%"></i></div></div>
         <button class="btn btn-sec" id="waBtn">${ic('i-wa')}Send WhatsApp reminder</button>
+        <button class="btn btn-sec" id="smsBtn">${ic('i-chat')}Send SMS reminder</button>
         ${b.status === 'tentative' ? `<button class="btn btn-pri" id="confirmBtn">${ic('i-check')}Confirm booking</button>` : ''}
         ${b.status === 'confirmed' ? `<button class="btn btn-sec" id="completeBtn">${ic('i-check')}Mark completed</button>` : ''}
         ${b.status !== 'cancelled' ? `<button class="btn btn-danger" id="cancelBtn">${ic('i-trash')}Cancel booking</button>` : ''}
@@ -752,11 +796,18 @@ async function renderBookingDetail(id) {
   if ($('#notifs')) $('#notifs').innerHTML = b.notifications.map((n) => `<div class="row"><div class="grow"><div class="nm">${n.template.replace(/_/g, ' ')}</div><div class="dt">${new Date(n.sent_at).toLocaleString('en-GB')}</div></div><span class="pill p-confirmed"><span class="dt"></span>${cap(n.status)}</span></div>`).join('');
   $('#addPay').onclick = () => openAddPayment(b);
   if ($('#editBtn')) $('#editBtn').onclick = () => openEditBooking(b);
-  $('#waBtn').onclick = busy(async () => {
-    const r = await api.post(`bookings/${b.id}/remind`);
-    if (!r.ok) return toast(r.data.message || 'Could not send the reminder. Please try again.');
-    toast('WhatsApp reminder sent', true); renderBookingDetail(id);
-  });
+  // Build the reminder message once (balance reminder if money is due, else an event reminder).
+  const reminderMsg = () => b.balance > 0 ? msgBalance(b.customer_name, b.event_date, b.balance) : msgEvent(b.customer_name, b.event_date, b.hall_name);
+  $('#waBtn').onclick = () => {
+    if (!b.customer_phone) return toast('No phone number on this booking');
+    window.open(waLink(b.customer_phone, reminderMsg()), '_blank');
+    api.post(`bookings/${b.id}/remind`).catch(() => {});
+    toast('Opening WhatsApp…', true);
+  };
+  $('#smsBtn').onclick = () => {
+    if (!b.customer_phone) return toast('No phone number on this booking');
+    window.location.href = smsLink(b.customer_phone, reminderMsg());
+  };
   if ($('#confirmBtn')) $('#confirmBtn').onclick = busy(async () => {
     const r = await api.post(`bookings/${b.id}/confirm`);
     if (!r.ok) return toast(r.data.message || 'Could not confirm — the slot may already be booked.');
@@ -1199,7 +1250,8 @@ function openNewBooking(pre = {}) {
       <div><label class="fl">Guests</label><input class="field" type="number" id="f_guests" placeholder="450"></div></div>
     <div class="two"><div><label class="fl">Per-head rate</label><input class="field" type="number" id="f_rate" placeholder="2800"></div>
       <div><label class="fl">Advance</label><input class="field" type="number" id="f_adv" placeholder="0"></div></div>
-    <label class="fl">Notes</label><textarea class="field" id="f_notes" placeholder="Optional"></textarea>
+    <label class="fl">Additional requirements</label><textarea class="field" id="f_req" placeholder="Decoration, menu, stage, special requests…"></textarea>
+    <label class="fl">Notes (internal)</label><textarea class="field" id="f_notes" placeholder="Optional"></textarea>
     <div class="totbox"><span class="k">TOTAL</span><span class="v" id="f_total">Rs 0</span></div><div id="f_avail"></div>`,
     `<button class="btn btn-sec" id="b_tent">Save as tentative</button><button class="btn btn-pri" id="b_conf">${ic('i-check')}Confirm</button>`);
   const g = (id) => $('#' + id);
@@ -1231,7 +1283,8 @@ function openNewBooking(pre = {}) {
       customer_name: g('f_name').value.trim(), customer_phone: g('f_phone').value.trim(), event_type: st.event,
       hall: Number(g('f_hall').value), slot: Number(g('f_slot').value), date: g('f_date').value,
       guest_count: Number(g('f_guests').value) || null, total_amount: st.total || 0,
-      advance: Number(g('f_adv').value) || 0, notes: g('f_notes').value.trim() || null, status,
+      advance: Number(g('f_adv').value) || 0, notes: g('f_notes').value.trim() || null,
+      requirements: g('f_req').value.trim() || null, status,
     };
     if (!body.customer_name || !body.date) return toast('Customer name and date are required');
     const r = await api.post('bookings', body);
@@ -1251,7 +1304,8 @@ function openEditBooking(b) {
     <label class="fl">Event type</label><div class="chips" id="e_event">${EVENTS.map((e) => `<span class="chip ${e === b.event_type ? 'on' : ''}" data-ev="${e}">${e}</span>`).join('')}</div>
     <div class="two"><div><label class="fl">Guests</label><input class="field" type="number" id="e_guests" value="${b.guest_count || ''}"></div>
       <div><label class="fl">Total amount</label><input class="field" type="number" id="e_total" value="${b.total_amount || 0}"></div></div>
-    <label class="fl">Notes</label><textarea class="field" id="e_notes">${esc(b.notes || '')}</textarea>`,
+    <label class="fl">Additional requirements</label><textarea class="field" id="e_req">${esc(b.requirements || '')}</textarea>
+    <label class="fl">Notes (internal)</label><textarea class="field" id="e_notes">${esc(b.notes || '')}</textarea>`,
     `<button class="btn btn-sec" id="e_cancel">Cancel</button><button class="btn btn-pri" id="e_save">Save</button>`);
   let event = b.event_type;
   $('#e_event').querySelectorAll('.chip').forEach((c) => c.onclick = () => { $('#e_event').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); event = c.dataset.ev; });
@@ -1260,7 +1314,8 @@ function openEditBooking(b) {
     if (!$('#e_name').value.trim()) return toast('Customer name is required');
     const r = await api.patch('bookings/' + b.id, {
       customer_name: $('#e_name').value.trim(), customer_phone: $('#e_phone').value.trim(), event_type: event,
-      guest_count: Number($('#e_guests').value) || null, total_amount: Number($('#e_total').value) || 0, notes: $('#e_notes').value.trim() || null,
+      guest_count: Number($('#e_guests').value) || null, total_amount: Number($('#e_total').value) || 0,
+      notes: $('#e_notes').value.trim() || null, requirements: $('#e_req').value.trim() || null,
     });
     if (!r.ok) return toast(r.data.message || 'Could not update. Please try again.');
     closeModal(); toast('Booking updated'); renderBookingDetail(b.id);
