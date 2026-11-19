@@ -49,6 +49,17 @@ const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${
 
 let VENUE = null;
 let ME = null;
+
+// ---- feature flags (platform-controlled per tenant) ----
+// Core modules are always available; optional ones depend on what the admin
+// enabled for this banquet (VENUE.features). See FEATURE_CATALOG on the server.
+const CORE_FEATURES = ['home', 'bookings', 'settings', 'booking'];
+const OPTIONAL_FEATURES = ['calendar', 'payments', 'calculator', 'import', 'media'];
+function featureOn(key) { return CORE_FEATURES.includes(key) || (VENUE?.features || []).includes(key); }
+// Show only the nav links whose feature is enabled.
+function applyFeatureNav() {
+  document.querySelectorAll('#nav a[data-feature]').forEach((a) => { a.style.display = featureOn(a.dataset.feature) ? '' : 'none'; });
+}
 let calState = { month: todayISO().slice(0, 7), hall: 1 };
 let listenerSet = false;
 
@@ -207,9 +218,11 @@ function logout() {
 }
 
 // ---- ADMIN panel (platform/Echo DMC) --------------------------------------
+let FEATURE_CAT = null;
 async function renderAdmin() {
   $('#app').hidden = true;
   const list = await api.get('admin/venues');
+  if (!FEATURE_CAT) FEATURE_CAT = (await api.get('admin/features')).catalog || [];
   $('#login').innerHTML = `<div class="admin-wrap">
     <div class="admin-top">
       <div class="brand"><span class="mk">${ic('i-cal')}</span><div><b>VENUE DIARY</b><span>ADMIN PANEL</span></div></div>
@@ -230,10 +243,15 @@ async function renderAdmin() {
       <div class="vmeta">${ic('i-home')} ${esc([v.city, v.area].filter(Boolean).join(', ') || '—')}</div>
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
       <div class="vmeta">${ic('i-book')} ${v.booking_count} bookings</div>
+      <div class="vmeta">${ic('i-gear')} ${(v.features || []).length} of ${FEATURE_CAT.length} features on</div>
       ${v.slug ? `<div class="vlink" data-copy="${esc(originBase() + '/' + v.slug)}" title="Copy owner link">${ic('i-link')}<span>/${esc(v.slug)}</span><span class="vlink-copy">Copy</span></div>` : ''}
-      <button class="btn btn-sec btn-sm" data-open="${v.id}" style="margin-top:10px;width:100%">Open dashboard ${ic('i-chev-r')}</button>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-sec btn-sm" data-feat="${v.id}" style="flex:none">${ic('i-gear')}Features</button>
+        <button class="btn btn-sec btn-sm" data-open="${v.id}" style="flex:1">Open dashboard ${ic('i-chev-r')}</button>
+      </div>
     </div>`).join('') : emptyState('i-home', 'No banquets registered yet. Tap "Register new banquet" to add one.');
   $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = busy(() => openBanquet(Number(b.dataset.open))));
+  $('#ad_grid').querySelectorAll('[data-feat]').forEach((b) => b.onclick = () => manageFeaturesModal(list.find((v) => v.id === Number(b.dataset.feat))));
   $('#ad_grid').querySelectorAll('[data-copy]').forEach((b) => b.onclick = async (e) => {
     e.stopPropagation();
     try { await navigator.clipboard.writeText(b.dataset.copy); toast('Owner link copied'); }
@@ -249,6 +267,28 @@ async function openBanquet(id) {
   startApp();
 }
 function backToAdmin() { ADMIN_VENUE = null; VENUE = null; $('#app').hidden = true; renderAdmin(); }
+
+// Admin (master) turns dashboard modules on/off for a specific banquet.
+function manageFeaturesModal(v) {
+  if (!v) return;
+  const enabled = new Set(v.features || []);
+  const cat = FEATURE_CAT || [];
+  modal('Features · ' + v.name,
+    `<div class="mono" style="margin-bottom:14px;color:var(--muted)">Turn modules on or off for this banquet's dashboard. Core screens (Home, Bookings, Settings) are always on.</div>
+     <div class="feat-list">${cat.map((f) => `
+       <label class="feat-row">
+         <div class="feat-text"><div class="feat-name">${esc(f.label)}</div><div class="feat-desc">${esc(f.desc)}</div></div>
+         <span class="switch"><input type="checkbox" data-k="${esc(f.key)}" ${enabled.has(f.key) ? 'checked' : ''}><span class="slider"></span></span>
+       </label>`).join('')}</div>`,
+    `<button class="btn btn-sec" id="ft_cancel">Cancel</button><button class="btn btn-pri" id="ft_save">${ic('i-check')}Save</button>`);
+  $('#ft_cancel').onclick = closeModal;
+  $('#ft_save').onclick = busy(async () => {
+    const features = [...$('#modal-root').querySelectorAll('input[data-k]:checked')].map((i) => i.dataset.k);
+    const r = await api.patch('admin/venues/' + v.id + '/features', { features });
+    if (!r.ok) return toast(r.data.message || 'Could not save features. Please try again.');
+    v.features = r.data.features; closeModal(); toast('Features updated'); renderAdmin();
+  });
+}
 function registerBanquetModal() {
   modal('Register new banquet', `
     <div class="form-sec">Banquet</div>
@@ -332,6 +372,11 @@ function renderNoVenue() {
 // ---- router ---------------------------------------------------------------
 async function route() {
   const [, page, arg] = (location.hash || '#/home').split('/');
+  // Gate disabled optional modules — the admin controls these per banquet.
+  if (OPTIONAL_FEATURES.includes(page) && !featureOn(page)) {
+    toast('This feature is turned off for your dashboard.');
+    location.hash = '#/home'; return;
+  }
   try {
     if (page === 'home') return await renderHome();
     if (page === 'calendar') return await renderCalendar();
@@ -392,6 +437,7 @@ async function renderHome() {
 }
 // Venue photo gallery for the dashboard (uses VENUE.media loaded with the venue).
 function galleryCardHTML() {
+  if (!featureOn('media')) return '';
   const imgs = (VENUE.media || []).filter((m) => m.kind !== 'video').slice(0, 8);
   const body = imgs.length
     ? `<div class="media-grid">${imgs.map((m) => `<div class="media-item"><img src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>`
@@ -778,7 +824,8 @@ let setTab = 'profile';
 async function renderSettings() {
   setNav('settings');
   VENUE = await api.get('venue');
-  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'], ['media', 'Photos & Videos']];
+  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'], ...(featureOn('media') ? [['media', 'Photos & Videos']] : [])];
+  if (setTab === 'media' && !featureOn('media')) setTab = 'profile';
   $('#view').innerHTML = `<div class="page-h"><h1>Settings</h1></div>
     <div class="tabs">${tabs.map(([k, n]) => `<button class="tab ${k === setTab ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
     <div id="setBody"></div>`;
@@ -1249,6 +1296,7 @@ function startNewBooking(pre) {
 function startApp() {
   $('#login').innerHTML = ''; $('#app').hidden = false;
   $('#brandVenue').textContent = VENUE.name;
+  applyFeatureNav();
   $('#newBtn').onclick = () => startNewBooking();
   const lb = $('#logoutBtn');
   // "Back to Admin" is only ever for an admin who opened a banquet — never for owners.
