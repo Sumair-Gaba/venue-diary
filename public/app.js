@@ -65,40 +65,46 @@ const pill = (status) => `<span class="pill p-${status}"><span class="dt"></span
 const kpi = (icon, n, label) => `<div class="kpi"><div class="ico">${ic(icon)}</div><div class="kmeta"><div class="n">${n}</div><div class="l">${label}</div></div></div>`;
 const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><span>${esc(text)}</span></div>`;
 
-// ---- date-based pricing rules --------------------------------------------
-// Resolve a base per-plate rate against the saved pricing rules for a date.
-// Precedence: a single-date rule beats a date-range (season) rule, which beats
-// a recurring weekday (weekend) rule. Returns the effective rate + rule applied.
+// ---- date-based flat pricing ---------------------------------------------
+// Banquets charge a flat complete price per hall+slot. Pricing rules adjust
+// that price by date: flat_add charges stack (e.g. weekend + wedding season
+// both add), while a flat_set rule overrides the whole price. A single-date
+// set beats a season set beats a weekend set. Returns the total + what applied.
 const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function resolvePrice(base, dateISO, rules = (VENUE && VENUE.pricing) || []) {
+function resolveFlatPrice(base, dateISO, rules = (VENUE && VENUE.pricing) || []) {
   base = Number(base) || 0;
-  if (!dateISO || !rules.length) return { base, effective: base, rule: null };
+  if (!dateISO || !rules.length) return { base, total: base, adds: [], setRule: null };
   const dow = new Date(dateISO + 'T00:00').getDay();
-  const match = (k) => rules.filter((r) => r.kind === k).find((r) =>
-    k === 'date' ? r.start_date === dateISO
-    : k === 'range' ? (r.start_date && r.end_date && dateISO >= r.start_date && dateISO <= r.end_date)
+  const matches = rules.filter((r) =>
+    r.kind === 'date' ? r.start_date === dateISO
+    : r.kind === 'range' ? (r.start_date && r.end_date && dateISO >= r.start_date && dateISO <= r.end_date)
     : String(r.weekdays || '').split(',').map(Number).includes(dow));
-  const rule = match('date') || match('range') || match('weekday') || null;
-  if (!rule) return { base, effective: base, rule: null };
-  let effective = base;
-  if (rule.adj_type === 'percent') effective = Math.round(base * (1 + rule.adj_value / 100));
-  else if (rule.adj_type === 'per_plate_add') effective = Math.round(base + rule.adj_value);
-  else if (rule.adj_type === 'per_plate_set') effective = Math.round(rule.adj_value);
-  return { base, effective: Math.max(0, effective), rule };
+  const sets = matches.filter((r) => r.adj_type === 'flat_set');
+  const setRule = sets.find((r) => r.kind === 'date') || sets.find((r) => r.kind === 'range') || sets.find((r) => r.kind === 'weekday') || null;
+  if (setRule) return { base, total: Math.max(0, Math.round(setRule.adj_value)), adds: [], setRule };
+  const adds = matches.filter((r) => r.adj_type === 'flat_add');
+  const total = base + adds.reduce((s, r) => s + Math.round(r.adj_value), 0);
+  return { base, total: Math.max(0, total), adds, setRule: null };
 }
 function ruleAdjText(r) {
   if (!r) return '';
-  if (r.adj_type === 'percent') return (r.adj_value >= 0 ? '+' : '') + r.adj_value + '%';
-  if (r.adj_type === 'per_plate_add') return (r.adj_value >= 0 ? '+' : '−') + fmt(Math.abs(r.adj_value)) + '/plate';
-  return fmt(r.adj_value) + '/plate';   // per_plate_set
+  if (r.adj_type === 'flat_set') return '= ' + fmt(r.adj_value);
+  return (r.adj_value >= 0 ? '+' : '− ') + fmt(Math.abs(r.adj_value));
 }
 function ruleLabel(r) {
   if (!r) return '';
   if (r.label) return r.label;
-  if (r.kind === 'weekday') return String(r.weekdays || '').split(',').map(Number).map((n) => WD_SHORT[n]).join('/') + ' rate';
-  if (r.kind === 'range') return 'Season rate';
+  if (r.kind === 'weekday') return String(r.weekdays || '').split(',').map(Number).map((n) => WD_SHORT[n]).join('/');
+  if (r.kind === 'range') return 'Season';
   return 'Date rate';
 }
+// The flat complete price saved for a hall + slot (0 if none set).
+function hallSlotPrice(hallId, slotId) {
+  const hp = (VENUE.hall_prices || []).find((p) => p.hall_id === Number(hallId) && p.slot_id === Number(slotId));
+  return hp ? hp.price : 0;
+}
+// Tables needed for a guest count (banquet rounds seat ~10).
+const tablesFor = (guests, seats = 10) => guests ? Math.ceil(guests / seats) : 0;
 
 let VENUE = null;
 let ME = null;
@@ -686,42 +692,35 @@ async function renderPayments() {
   bindRows();
 }
 
-// ---- Calculator v2 (banquet quote estimator) ----
-// Prices a function the way banquets actually bill: a *minimum-guarantee* head
-// count (billed even if fewer attend) OR tables × seats, at a per-plate rate,
-// then service charge % and tax/GST % on top, plus fixed extras (decor, DJ,
-// stage), minus discount and advance. Turns the estimate into a booking or a
-// WhatsApp-ready quote.
-let calcBasis = 'plate';  // 'plate' = guaranteed pax · 'table' = tables × seats
 let calcDecor = new Set();  // decor/stage catalog item ids selected into the quote
+// ---- Rate calculator (flat banquet pricing) ----
+// Banquets charge a flat complete price per hall + slot (Lunch/Dinner/Full Day),
+// not per head. Pick hall + slot + date and the saved price auto-fills; weekend
+// and wedding-season rules add on top (or a single-date rule sets it outright).
+// Guest count is only for seating (tables) — it never changes the price.
 async function renderCalculator() {
   setNav('calculator');
   const evOpts = EVENTS.map((e) => `<option>${e}</option>`).join('');
   const hallOpts = VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('');
-  const scDefault = VENUE.service_charge_pct ?? '';
-  const taxDefault = VENUE.tax_pct ?? '';
+  const slotOpts = VENUE.slots.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   $('#view').innerHTML = `
-    <div class="page-h"><div><h1>Rate calculator</h1><div class="sub">Banquet quote — minimum guarantee, service charge & tax</div></div></div>
+    <div class="page-h"><div><h1>Rate calculator</h1><div class="sub">Banquet quote — flat price by hall, slot &amp; date</div></div></div>
     <div class="grid" style="grid-template-columns:1fr 340px;align-items:start">
       <div class="card pad">
         <div class="two">
-          <div><label class="fl">Event type</label><select class="field" id="c_event"><option value="">—</option>${evOpts}</select></div>
-          <div><label class="fl">Hall (for rate)</label><select class="field" id="c_hall"><option value="">—</option>${hallOpts}</select></div>
+          <div><label class="fl">Hall</label><select class="field" id="c_hall"><option value="">—</option>${hallOpts}</select></div>
+          <div><label class="fl">Function</label><select class="field" id="c_slot"><option value="">—</option>${slotOpts}</select></div>
         </div>
-        <div style="margin-top:14px"><label class="fl">Event date (for weekend / date rates)</label>
-          <input class="field" type="date" id="c_date">
-          <div class="mono" id="c_pricenote" style="margin-top:6px;color:var(--muted)"></div></div>
-        <label class="fl" style="margin-top:14px">How is it billed?</label>
-        <div class="tabs">
-          <button class="tab ${calcBasis === 'plate' ? 'on' : ''}" data-basis="plate">Per plate</button>
-          <button class="tab ${calcBasis === 'table' ? 'on' : ''}" data-basis="table">Per table</button>
-        </div>
-        <div id="c_basisbody"></div>
         <div class="two" style="margin-top:14px">
-          <div><label class="fl">Per-plate rate (Rs)</label><input class="field" type="number" id="c_rate" placeholder="2800"></div>
-          <div><label class="fl">Billable guests</label><input class="field" id="c_bill" readonly></div>
+          <div><label class="fl">Event type</label><select class="field" id="c_event"><option value="">—</option>${evOpts}</select></div>
+          <div><label class="fl">Event date</label><input class="field" type="date" id="c_date"></div>
         </div>
-        <div class="mono" style="margin-top:6px;color:var(--muted)">Pick hall + event to auto-fill the rate from your saved rates.</div>
+        <div style="margin-top:14px"><label class="fl">Complete hall price (Rs)</label>
+          <input class="field" type="number" id="c_base" placeholder="400000">
+          <div class="mono" id="c_pricenote" style="margin-top:6px;color:var(--muted)">Pick hall + function to auto-fill the saved price. Pick a date for weekend / season rates.</div></div>
+        <div style="margin-top:14px"><label class="fl">Guests (for seating — doesn't change price)</label>
+          <input class="field" type="number" id="c_guests" placeholder="450">
+          <div class="mono" id="c_seatnote" style="margin-top:6px;color:var(--muted)"></div></div>
         ${featureOn('decor') && (VENUE.decor || []).length ? `<div class="form-sec">Decor &amp; Stage</div>
         <div class="mono" style="color:var(--muted);margin-bottom:4px">Tap to add to the quote.</div>
         <div class="decor-pick" id="c_decor"></div>` : ''}
@@ -729,10 +728,6 @@ async function renderCalculator() {
         <div id="c_extras"></div>
         <button type="button" class="btn btn-sec btn-sm" id="c_addextra" style="margin-top:6px">${ic('i-plus')}Add charge</button>
         <div class="two" style="margin-top:16px">
-          <div><label class="fl">Service charge %</label><input class="field" type="number" id="c_sc" step="0.5" min="0" max="100" placeholder="18" value="${scDefault}"></div>
-          <div><label class="fl">Tax / GST %</label><input class="field" type="number" id="c_tax" step="0.5" min="0" max="100" placeholder="16" value="${taxDefault}"></div>
-        </div>
-        <div class="two" style="margin-top:14px">
           <div><label class="fl">Discount (Rs)</label><input class="field" type="number" id="c_disc" placeholder="0"></div>
           <div><label class="fl">Advance received</label><input class="field" type="number" id="c_adv" placeholder="0"></div>
         </div>
@@ -741,7 +736,7 @@ async function renderCalculator() {
         <div class="card-h"><h3>Estimate</h3></div>
         <div id="c_breakdown"></div>
         <div class="totbox"><span class="k">GRAND TOTAL</span><span class="v" id="c_total">Rs 0</span></div>
-        <div class="pr" style="margin-top:8px"><span class="k">Per plate (effective)</span><span class="v" id="c_perhead">Rs 0</span></div>
+        <div class="pr" style="margin-top:8px"><span class="k">Balance due</span><span class="v" id="c_bal">Rs 0</span></div>
         <button class="btn btn-pri" id="c_book" style="width:100%;margin-top:14px">${ic('i-plus')}Create booking from quote</button>
         <button class="btn btn-sec" id="c_copy" style="width:100%;margin-top:8px">${ic('i-wa')}Copy quote text</button>
       </div>
@@ -750,89 +745,61 @@ async function renderCalculator() {
   const g = (id) => $('#' + id);
   const num = (id) => Number(g(id)?.value) || 0;
 
-  // Billable guests: the minimum-guarantee pax, or tables × seats.
-  function billable() {
-    if (calcBasis === 'table') return num('c_tables') * num('c_seats');
-    return num('c_pax');
-  }
-
-  // Read the whole form into a tidy numbers object following the billing chain:
-  // food → +extras → −discount → +service charge → +tax → grand total.
+  // Read the form into a tidy object: flat hall price (+ date rules) + decor +
+  // extras − discount = grand total; − advance = balance.
   function compute() {
-    const pax = billable();
-    const base = num('c_rate');
-    const pr = resolvePrice(base, g('c_date')?.value);
-    const perPlate = pr.effective;          // after any weekend/date rule
-    const food = pax * perPlate;
+    const base = num('c_base');
+    const pr = resolveFlatPrice(base, g('c_date').value);
+    const hallPrice = pr.total;
+    const decorSel = (VENUE.decor || []).filter((d) => calcDecor.has(d.id));
+    const decorTotal = decorSel.reduce((s, d) => s + (d.price || 0), 0);
     const extras = [...$('#c_extras').querySelectorAll('.calc-row')].map((r) => {
       const i = r.querySelectorAll('input');
       return { name: i[0].value.trim() || 'Charge', amt: Number(i[1].value) || 0 };
     }).filter((e) => e.amt);
     const extrasTotal = extras.reduce((s, e) => s + e.amt, 0);
-    const decorSel = (VENUE.decor || []).filter((d) => calcDecor.has(d.id));
-    const decorTotal = decorSel.reduce((s, d) => s + (d.price || 0), 0);
     const discount = num('c_disc');
-    const subtotal = Math.max(0, food + extrasTotal + decorTotal - discount);
-    const scPct = num('c_sc'), taxPct = num('c_tax');
-    const serviceCharge = Math.round(subtotal * scPct / 100);
-    const taxBase = subtotal + serviceCharge;
-    const tax = Math.round(taxBase * taxPct / 100);
-    const grand = taxBase + tax;
+    const grand = Math.max(0, hallPrice + decorTotal + extrasTotal - discount);
     const advance = num('c_adv');
-    return { pax, base, perPlate, priceRule: pr.rule, food, extras, extrasTotal, decorSel, decorTotal, discount, subtotal, scPct, serviceCharge, taxPct, tax, grand, advance, balance: grand - advance, eff: pax ? grand / pax : 0 };
+    const guests = num('c_guests');
+    return { base, pr, hallPrice, decorSel, decorTotal, extras, extrasTotal, discount, grand, advance, balance: grand - advance, guests };
   }
 
   function recalc() {
     const c = compute();
-    g('c_bill').value = c.pax ? c.pax.toLocaleString('en-IN') : '';
-    // Price note under the date: show the rule applied, if any.
-    const note = g('c_pricenote');
-    if (note) note.innerHTML = c.priceRule
-      ? `<span style="color:var(--amber-txt)">${esc(ruleLabel(c.priceRule))} (${ruleAdjText(c.priceRule)}) → effective ${fmt(c.perPlate)}/plate</span>`
-      : (g('c_date')?.value ? 'Base rate (no weekend/date rule for this date).' : 'Pick a date to apply weekend / season / special-date rates.');
     const rows = [];
-    if (c.priceRule && c.perPlate !== c.base) {
-      rows.push([`Food (${c.pax} × ${fmt(c.base)})`, fmt(c.pax * c.base)]);
-      rows.push([`${esc(ruleLabel(c.priceRule))} (${ruleAdjText(c.priceRule)})`, (c.food - c.pax * c.base >= 0 ? '' : '− ') + fmt(Math.abs(c.food - c.pax * c.base))]);
+    if (c.pr.setRule) {
+      rows.push([`Hall price · ${esc(ruleLabel(c.pr.setRule))}`, fmt(c.hallPrice)]);
     } else {
-      rows.push([`Food (${c.pax} × ${fmt(c.perPlate)})`, fmt(c.food)]);
+      rows.push(['Hall price', fmt(c.base)]);
+      c.pr.adds.forEach((r) => rows.push([`${esc(ruleLabel(r))} (${ruleAdjText(r)})`, fmt(r.adj_value)]));
     }
     c.decorSel.forEach((d) => rows.push([esc(d.name), fmt(d.price)]));
     c.extras.forEach((e) => rows.push([esc(e.name), fmt(e.amt)]));
     if (c.discount) rows.push(['Discount', '− ' + fmt(c.discount)]);
-    if (c.scPct) rows.push([`Service charge (${c.scPct}%)`, fmt(c.serviceCharge)]);
-    if (c.taxPct) rows.push([`Tax / GST (${c.taxPct}%)`, fmt(c.tax)]);
-    if (c.advance) { rows.push(['Advance received', '− ' + fmt(c.advance)]); rows.push(['Balance', fmt(c.balance)]); }
+    if (c.advance) rows.push(['Advance received', '− ' + fmt(c.advance)]);
     $('#c_breakdown').innerHTML = rows.map(([k, v]) => `<div class="pr"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
     g('c_total').textContent = fmt(c.grand);
-    g('c_perhead').textContent = fmt(Math.round(c.eff));
+    g('c_bal').textContent = fmt(c.balance);
+    // Price note under the complete-price field.
+    const note = g('c_pricenote');
+    if (c.pr.setRule) note.innerHTML = `<span style="color:var(--amber-txt)">${esc(ruleLabel(c.pr.setRule))}: price set to ${fmt(c.hallPrice)} for this date.</span>`;
+    else if (c.pr.adds.length) note.innerHTML = `<span style="color:var(--amber-txt)">${c.pr.adds.map((r) => esc(ruleLabel(r)) + ' ' + ruleAdjText(r)).join(' · ')} → ${fmt(c.hallPrice)}</span>`;
+    else note.innerHTML = g('c_date').value ? 'Base price (no weekend/season rule for this date).' : 'Pick hall + function to auto-fill; pick a date for weekend / season rates.';
+    // Seating note.
+    const hall = VENUE.halls.find((h) => h.id === Number(g('c_hall').value));
+    const cap = hall && hall.capacity;
+    const sn = g('c_seatnote');
+    if (!c.guests) sn.innerHTML = '';
+    else sn.innerHTML = `${tablesFor(c.guests)} tables (≈10/table)` + (cap ? ` · hall capacity ${cap}` + (c.guests > cap ? ` <span style="color:var(--rose)">— over capacity!</span>` : '') : '');
   }
 
-  // Fill the per-plate rate from saved rate plans when hall + event are chosen.
-  function autofillRate() {
-    const hall = Number(g('c_hall').value), ev = g('c_event').value;
-    if (!hall || !ev) return;
-    const rp = VENUE.rates.find((r) => r.hall_id === hall && r.event_type === ev);
-    if (rp) g('c_rate').value = rp.per_head_rate;
-  }
-
-  // Per-plate vs per-table inputs.
-  function renderBasis() {
-    const b = $('#c_basisbody');
-    if (calcBasis === 'plate') {
-      b.innerHTML = `<div style="margin-top:10px"><label class="fl">Guaranteed guests (minimum)</label>
-        <input class="field" type="number" id="c_pax" placeholder="500">
-        <div class="mono" style="margin-top:6px;color:var(--muted)">Billed on this count even if fewer attend.</div></div>`;
-      g('c_pax').oninput = recalc;
-    } else {
-      b.innerHTML = `<div class="two" style="margin-top:10px">
-        <div><label class="fl">Tables</label><input class="field" type="number" id="c_tables" placeholder="50"></div>
-        <div><label class="fl">Seats / table</label><input class="field" type="number" id="c_seats" placeholder="10" value="10"></div>
-      </div><div class="mono" style="margin-top:6px;color:var(--muted)">Billable guests = tables × seats.</div>`;
-      g('c_tables').oninput = recalc;
-      g('c_seats').oninput = recalc;
-    }
-    recalc();
+  // Auto-fill the saved flat price for the chosen hall + slot.
+  function autofillPrice() {
+    const hall = Number(g('c_hall').value), slot = Number(g('c_slot').value);
+    if (!hall || !slot) return;
+    const p = hallSlotPrice(hall, slot);
+    if (p) g('c_base').value = p;
   }
 
   // Decor/stage catalog cards — tap to add/remove from the quote.
@@ -868,38 +835,39 @@ async function renderCalculator() {
     if (!VENUE.slots.length) { toast('Add slots first (Settings → Slots)'); return; }
     const c = compute();
     const hall = g('c_hall').value ? Number(g('c_hall').value) : VENUE.halls[0].id;
-    openNewBooking({ date: g('c_date').value || todayISO(), hall, slot: VENUE.slots[0].id, guests: c.pax || null, rate: c.perPlate || null, event: g('c_event').value || null });
+    const slot = g('c_slot').value ? Number(g('c_slot').value) : VENUE.slots[0].id;
+    openNewBooking({ date: g('c_date').value || todayISO(), hall, slot, guests: c.guests || null, price: c.grand || null, event: g('c_event').value || null });
   }
 
   async function copyQuote() {
     const c = compute();
     const lines = [`${VENUE.name} — Estimate`, ''];
+    const hall = VENUE.halls.find((h) => h.id === Number(g('c_hall').value));
+    const slot = VENUE.slots.find((s) => s.id === Number(g('c_slot').value));
+    if (hall) lines.push(`Hall: ${hall.name}${slot ? ' · ' + slot.name : ''}`);
     if (g('c_date').value) lines.push(`Date: ${g('c_date').value}`);
-    lines.push(calcBasis === 'table' ? `Tables: ${num('c_tables')} × ${num('c_seats')} seats = ${c.pax} guests` : `Guaranteed guests: ${c.pax}`);
-    if (c.priceRule && c.perPlate !== c.base) lines.push(`Per plate: ${fmt(c.base)} → ${fmt(c.perPlate)} (${ruleLabel(c.priceRule)} ${ruleAdjText(c.priceRule)})`);
-    else lines.push(`Per plate: ${fmt(c.perPlate)}`);
-    lines.push(`Food: ${fmt(c.food)}`);
+    if (c.guests) lines.push(`Guests: ${c.guests} (${tablesFor(c.guests)} tables)`);
+    if (c.pr.setRule) lines.push(`Hall price (${ruleLabel(c.pr.setRule)}): ${fmt(c.hallPrice)}`);
+    else { lines.push(`Hall price: ${fmt(c.base)}`); c.pr.adds.forEach((r) => lines.push(`${ruleLabel(r)} (${ruleAdjText(r)}): ${fmt(r.adj_value)}`)); }
     c.decorSel.forEach((d) => lines.push(`${d.name}: ${fmt(d.price)}`));
     c.extras.forEach((e) => lines.push(`${e.name}: ${fmt(e.amt)}`));
     if (c.discount) lines.push(`Discount: − ${fmt(c.discount)}`);
-    if (c.scPct) lines.push(`Service charge (${c.scPct}%): ${fmt(c.serviceCharge)}`);
-    if (c.taxPct) lines.push(`Tax / GST (${c.taxPct}%): ${fmt(c.tax)}`);
     lines.push(`Total: ${fmt(c.grand)}`);
     if (c.advance) lines.push(`Advance: ${fmt(c.advance)}`, `Balance: ${fmt(c.balance)}`);
     try { await navigator.clipboard.writeText(lines.join('\n')); toast('Quote copied — paste into WhatsApp'); }
     catch { toast('Could not copy on this device'); }
   }
 
-  $('#view').querySelectorAll('.tab[data-basis]').forEach((t) => t.onclick = () => { calcBasis = t.dataset.basis; renderCalculator(); });
   g('c_addextra').onclick = () => addRow('#c_extras', 'e.g. Decoration', 'Amount', 130);
-  ['c_rate', 'c_sc', 'c_tax', 'c_disc', 'c_adv'].forEach((id) => g(id).oninput = recalc);
+  ['c_base', 'c_disc', 'c_adv', 'c_guests'].forEach((id) => g(id).oninput = recalc);
   g('c_date').oninput = recalc;
-  g('c_hall').onchange = () => { autofillRate(); recalc(); };
-  g('c_event').onchange = () => { autofillRate(); recalc(); };
+  g('c_hall').onchange = () => { autofillPrice(); recalc(); };
+  g('c_slot').onchange = () => { autofillPrice(); recalc(); };
+  g('c_event').onchange = recalc;
   g('c_book').onclick = () => createBookingFromQuote();
   g('c_copy').onclick = () => copyQuote();
   renderDecorPicker();
-  renderBasis();
+  recalc();
 }
 
 // ---- Booking detail ----
@@ -1021,7 +989,7 @@ let setTab = 'profile';
 async function renderSettings() {
   setNav('settings');
   VENUE = await api.get('venue');
-  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'],
+  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Pricing'],
     ...(featureOn('media') ? [['media', 'Photos & Videos']] : []),
     ...(featureOn('decor') ? [['decor', 'Decor & Stage']] : [])];
   if (setTab === 'media' && !featureOn('media')) setTab = 'profile';
@@ -1202,10 +1170,6 @@ function setProfile() {
     <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="s_cmin" value="${v.capacity_min || ''}"></div>
       <div><label class="fl">Max capacity</label><input class="field" type="number" id="s_cmax" value="${v.capacity_max || ''}"></div></div>
     <label class="fl">Facilities</label><div class="chips" id="s_fac">${v.all_facilities.map((f) => `<span class="chip ${v.facilities.includes(f) ? 'on' : ''}" data-f="${f}">${f}</span>`).join('')}</div>
-    <div class="form-sec">Billing defaults</div>
-    <div class="two"><div><label class="fl">Service charge %</label><input class="field" type="number" id="s_sc" step="0.5" min="0" max="100" placeholder="18" value="${v.service_charge_pct ?? ''}"></div>
-      <div><label class="fl">Tax / GST %</label><input class="field" type="number" id="s_tax" step="0.5" min="0" max="100" placeholder="16" value="${v.tax_pct ?? ''}"></div></div>
-    <div class="mono" style="color:var(--muted)">Used to pre-fill the rate calculator. Leave blank if you don't charge them.</div>
     ${locationPickerHTML('s', v)}
     <button class="btn btn-pri" id="s_save" style="margin-top:20px">${ic('i-check')}Save changes</button></div>`;
   setupLocationPicker('s', v, () => $('#s_city').value);
@@ -1215,8 +1179,6 @@ function setProfile() {
     const r = await api.patch('venue', {
       name: $('#s_name').value, phone: $('#s_phone').value, city: $('#s_city').value, area: $('#s_area').value,
       address: $('#s_address').value, capacity_min: Number($('#s_cmin').value) || null, capacity_max: Number($('#s_cmax').value) || null, facilities,
-      service_charge_pct: $('#s_sc').value === '' ? null : Number($('#s_sc').value),
-      tax_pct: $('#s_tax').value === '' ? null : Number($('#s_tax').value),
       ...readPicker('s'),
     });
     if (!r.ok) return toast(r.data.message || 'Could not save. Please try again.');
@@ -1266,65 +1228,60 @@ function setSlots() {
   });
 }
 function setRates() {
-  const byHall = VENUE.halls.map((h) => ({ hall: h, rates: VENUE.rates.filter((r) => r.hall_id === h.id) }));
+  const noHallsOrSlots = !VENUE.halls.length || !VENUE.slots.length;
   $('#setBody').innerHTML = `<div class="card pad" style="max-width:620px">
-    ${byHall.map((g) => `<div class="card-h" style="margin-top:8px"><h3>${esc(g.hall.name)}</h3></div>
-      <div>${g.rates.map((r) => `<div class="row"><div class="grow"><div class="nm">${esc(r.event_type)}</div></div><div class="amt">${fmt(r.per_head_rate)} / head</div>
-        <button class="iconbtn" data-del="${r.id}" style="margin-left:10px">${ic('i-trash')}</button></div>`).join('') || `<div class="empty">No rates.</div>`}</div>`).join('')}
-    <div class="inline-add" style="margin-top:16px">
-      <select class="field" id="nr_hall">${VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}</select>
-      <select class="field" id="nr_event">${EVENTS.map((e) => `<option>${e}</option>`).join('')}</select>
-      <input class="field" id="nr_rate" type="number" placeholder="Rate" style="max-width:120px">
-      <button class="btn btn-pri" id="nr_add">${ic('i-plus')}Add</button></div></div>
-    <div class="card pad" style="max-width:620px;margin-top:16px">
-      <div class="card-h"><h3>Date &amp; weekend pricing</h3>
-        <button class="btn btn-pri btn-sm" id="pr_add">${ic('i-plus')}Add rule</button></div>
-      <div class="mono" style="color:var(--muted);margin-bottom:10px">Bump the per-plate rate for weekends, a season (date range), or a specific date. Applied automatically in the rate calculator &amp; new bookings — most specific wins (date &gt; season &gt; weekend).</div>
-      <div id="pr_list"></div>
-    </div>`;
-  $('#setBody').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
-    await api.del('rates/' + b.dataset.del); VENUE = await api.get('venue'); setRates(); toast('Rate removed');
-  });
-  $('#nr_add').onclick = busy(async () => {
-    if (!$('#nr_rate').value) return toast('Please enter a rate');
-    const r = await api.post('rates', { hall_id: Number($('#nr_hall').value), event_type: $('#nr_event').value, per_head_rate: Number($('#nr_rate').value) });
-    if (!r.ok) return toast(r.data.message || 'Could not add this rate. Please try again.');
-    VENUE = await api.get('venue'); setRates(); toast('Rate added');
+    <div class="card-h"><h3>Hall prices (flat, complete)</h3></div>
+    <div class="mono" style="color:var(--muted);margin-bottom:10px">Set the complete price for each hall &amp; function (Lunch / Dinner / Full Day). This is the whole-event price — no per-head. Leave blank for none.</div>
+    ${noHallsOrSlots ? `<div class="empty">Add halls and slots first (Settings → Halls / Slots).</div>`
+      : VENUE.halls.map((h) => `<div class="form-sec">${esc(h.name)}</div>
+        ${VENUE.slots.map((s) => `<div class="row"><div class="grow"><div class="nm">${esc(s.name)}</div></div>
+          <input class="field hp-in" type="number" data-hall="${h.id}" data-slot="${s.id}" placeholder="0" value="${hallSlotPrice(h.id, s.id) || ''}" style="max-width:160px">
+        </div>`).join('')}`).join('')}
+  </div>
+  <div class="card pad" style="max-width:620px;margin-top:16px">
+    <div class="card-h"><h3>Date &amp; weekend charges</h3>
+      <button class="btn btn-pri btn-sm" id="pr_add">${ic('i-plus')}Add rule</button></div>
+    <div class="mono" style="color:var(--muted);margin-bottom:10px">Add to the hall price for weekends, a season (date range), or a specific date — or set an exact price for one date. Weekend &amp; season charges add up; a single date overrides. Applied automatically in the calculator &amp; new bookings.</div>
+    <div id="pr_list"></div>
+  </div>`;
+  $('#setBody').querySelectorAll('.hp-in').forEach((inp) => inp.onchange = async () => {
+    const r = await api.post('hall-prices', { hall_id: Number(inp.dataset.hall), slot_id: Number(inp.dataset.slot), price: Number(inp.value) || 0 });
+    if (!r.ok) return toast(r.data.message || 'Could not save price.');
+    VENUE = await api.get('venue'); toast('Price saved');
   });
   $('#pr_add').onclick = () => pricingForm();
   renderPricingList();
 }
-// List of saved pricing rules (weekend / season / single-date).
+// List of saved date charges (weekend / season / single-date).
 function renderPricingList() {
   const rules = VENUE.pricing || [];
   const when = (r) => r.kind === 'weekday' ? String(r.weekdays || '').split(',').map(Number).map((n) => WD_SHORT[n]).join(', ')
     : r.kind === 'range' ? `${r.start_date} → ${r.end_date}` : r.start_date;
-  const adj = (r) => r.adj_type === 'per_plate_set' ? `set ${ruleAdjText(r)}` : ruleAdjText(r);
   $('#pr_list').innerHTML = rules.length ? rules.map((r) => `<div class="row">
     <div class="grow"><div class="nm">${esc(ruleLabel(r))}</div><div class="dt">${esc(when(r))}</div></div>
-    <div class="amt">${esc(adj(r))}</div>
+    <div class="amt">${esc(ruleAdjText(r))}</div>
     <button class="iconbtn sm" data-pedit="${r.id}" title="Edit" style="margin-left:10px">${ic('i-edit')}</button>
     <button class="iconbtn sm" data-pdel="${r.id}" title="Delete">${ic('i-trash')}</button></div>`).join('')
-    : `<div class="empty">No date rules yet. Tap “Add rule”.</div>`;
+    : `<div class="empty">No date charges yet. Tap “Add rule”.</div>`;
   $('#pr_list').querySelectorAll('[data-pedit]').forEach((b) => b.onclick = () => pricingForm(rules.find((x) => x.id === Number(b.dataset.pedit))));
   $('#pr_list').querySelectorAll('[data-pdel]').forEach((b) => b.onclick = async () => {
     if (!confirm('Delete this rule?')) return;
     await api.del('pricing/' + b.dataset.pdel); VENUE = await api.get('venue'); setRates(); toast('Rule deleted');
   });
 }
-// Add / edit a pricing rule. Fields change with the chosen rule type.
+// Add / edit a date charge. Fields change with the chosen rule type.
 function pricingForm(rule = null) {
   let kind = rule?.kind || 'weekday';
   const selDays = new Set(rule ? String(rule.weekdays || '').split(',').map(Number) : [0, 6]); // default Sat+Sun
   const kinds = [['weekday', 'Weekend / weekday'], ['range', 'Date range (season)'], ['date', 'Single date']];
-  const adjs = [['percent', 'Uplift %'], ['per_plate_add', '+ Rs per plate'], ['per_plate_set', 'Set Rs per plate']];
-  modal(rule ? 'Edit pricing rule' : 'Add pricing rule', `
+  const adjs = [['flat_add', '+ Rs (add to hall price)'], ['flat_set', 'Set exact Rs for this date']];
+  modal(rule ? 'Edit date charge' : 'Add date charge', `
     <label class="fl">Rule type</label>
     <select class="field" id="pf_kind">${kinds.map(([v, n]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <div id="pf_when" style="margin-top:12px"></div>
     <div class="two" style="margin-top:12px">
       <div><label class="fl">Adjustment</label><select class="field" id="pf_adjtype">${adjs.map(([v, n]) => `<option value="${v}" ${rule?.adj_type === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
-      <div><label class="fl">Value</label><input class="field" type="number" id="pf_val" step="0.5" placeholder="15" value="${rule?.adj_value ?? ''}"></div>
+      <div><label class="fl">Amount (Rs)</label><input class="field" type="number" id="pf_val" step="1000" placeholder="100000" value="${rule?.adj_value ?? ''}"></div>
     </div>
     <label class="fl">Label (optional)</label><input class="field" id="pf_label" placeholder="e.g. Weekend, Wedding season" value="${esc(rule?.label || '')}">`,
     `<button class="btn btn-sec" id="pf_cancel">Cancel</button><button class="btn btn-pri" id="pf_save">${ic('i-check')}Save</button>`);
@@ -1544,23 +1501,31 @@ function openNewBooking(pre = {}) {
     <div class="two"><div><label class="fl">Hall</label><select class="field" id="f_hall">${hallOpts}</select></div>
       <div><label class="fl">Slot</label><select class="field" id="f_slot">${slotOpts}</select></div></div>
     <div class="two"><div><label class="fl">Date</label><input class="field" type="date" id="f_date" value="${st.date || ''}"></div>
-      <div><label class="fl">Guests</label><input class="field" type="number" id="f_guests" placeholder="450"></div></div>
-    <div class="two"><div><label class="fl">Per-head rate</label><input class="field" type="number" id="f_rate" placeholder="2800"></div>
+      <div><label class="fl">Guests (seating)</label><input class="field" type="number" id="f_guests" placeholder="450"></div></div>
+    <div class="two"><div><label class="fl">Complete price (Rs)</label><input class="field" type="number" id="f_price" placeholder="400000"></div>
       <div><label class="fl">Advance</label><input class="field" type="number" id="f_adv" placeholder="0"></div></div>
+    <div class="mono" id="f_pricenote" style="color:var(--muted);margin-top:4px"></div>
     <label class="fl">Additional requirements</label><textarea class="field" id="f_req" placeholder="Decoration, menu, stage, special requests…"></textarea>
     <label class="fl">Notes (internal)</label><textarea class="field" id="f_notes" placeholder="Optional"></textarea>
     <div class="totbox"><span class="k">TOTAL</span><span class="v" id="f_total">Rs 0</span></div><div id="f_avail"></div>`,
     `<button class="btn btn-sec" id="b_tent">Save as tentative</button><button class="btn btn-pri" id="b_conf">${ic('i-check')}Confirm</button>`);
   const g = (id) => $('#' + id);
   g('f_event').querySelectorAll('.chip').forEach((c) => c.onclick = () => {
-    g('f_event').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); st.event = c.dataset.ev; autofillRate();
+    g('f_event').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); st.event = c.dataset.ev;
   });
-  function autofillRate() {
-    const rp = VENUE.rates.find((r) => r.hall_id === Number(g('f_hall').value) && r.event_type === st.event);
-    if (rp && !g('f_rate').value) g('f_rate').value = rp.per_head_rate; recalc();
+  // Auto-fill the flat complete price for the chosen hall + slot + date.
+  function autofillPrice() {
+    const base = hallSlotPrice(Number(g('f_hall').value), Number(g('f_slot').value));
+    const pr = resolveFlatPrice(base, g('f_date').value);
+    g('f_price').value = pr.total || '';
+    const note = g('f_pricenote');
+    if (pr.setRule) note.textContent = `${ruleLabel(pr.setRule)}: price set to ${fmt(pr.total)} for this date.`;
+    else if (pr.adds.length) note.textContent = `${fmt(base)} + ${pr.adds.map((r) => ruleLabel(r) + ' ' + ruleAdjText(r)).join(' + ')} = ${fmt(pr.total)}`;
+    else note.textContent = base ? '' : 'No saved price for this hall + function — enter it manually.';
+    recalc();
   }
-  function recalc() { const t = (Number(g('f_guests').value) || 0) * (Number(g('f_rate').value) || 0); g('f_total').textContent = fmt(t); st.total = t; }
-  ['f_guests', 'f_rate'].forEach((id) => g(id).oninput = recalc);
+  function recalc() { const t = Number(g('f_price').value) || 0; g('f_total').textContent = fmt(t); st.total = t; }
+  g('f_price').oninput = recalc;
   async function checkAvail() {
     const date = g('f_date').value; if (!date) { g('f_avail').innerHTML = ''; return; }
     const { data } = await api.post('check', { hall: Number(g('f_hall').value), date, slot: Number(g('f_slot').value) });
@@ -1570,12 +1535,13 @@ function openNewBooking(pre = {}) {
         ? `<div class="note">${ic('i-warn')}This slot has a hold for ${esc(data.hold.customer_name)}${data.hold.slot_name ? ' · ' + esc(data.hold.slot_name) : ''}. You can still book it.</div>`
         : `<div class="ok">${ic('i-check')}This slot is available.</div>`;
   }
-  ['f_hall', 'f_slot', 'f_date'].forEach((id) => g(id).onchange = () => { autofillRate(); checkAvail(); });
+  ['f_hall', 'f_slot', 'f_date'].forEach((id) => g(id).onchange = () => { autofillPrice(); checkAvail(); });
   // Prefill from the rate calculator ("Create booking from quote").
   if (st.event) { const chip = [...g('f_event').querySelectorAll('.chip')].find((c) => c.dataset.ev === st.event); if (chip) chip.classList.add('on'); }
   if (st.guests) g('f_guests').value = st.guests;
-  if (st.rate) g('f_rate').value = st.rate;
-  if (st.guests || st.rate) recalc();
+  if (st.price != null) g('f_price').value = st.price;
+  else autofillPrice();
+  recalc();
   if (st.date) checkAvail();
   async function submit(status) {
     const body = {
