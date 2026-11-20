@@ -650,31 +650,46 @@ async function renderPayments() {
   bindRows();
 }
 
-// ---- Calculator (quote estimator) ----
-// A standalone quote tool: price a function per head (one rate) OR per dish
-// (a menu where each dish adds to the per-head rate), add fixed charges and a
-// discount, then turn the estimate straight into a booking or copy it to share.
-let calcMode = 'head';
+// ---- Calculator v2 (banquet quote estimator) ----
+// Prices a function the way banquets actually bill: a *minimum-guarantee* head
+// count (billed even if fewer attend) OR tables × seats, at a per-plate rate,
+// then service charge % and tax/GST % on top, plus fixed extras (decor, DJ,
+// stage), minus discount and advance. Turns the estimate into a booking or a
+// WhatsApp-ready quote.
+let calcBasis = 'plate';  // 'plate' = guaranteed pax · 'table' = tables × seats
 async function renderCalculator() {
   setNav('calculator');
   const evOpts = EVENTS.map((e) => `<option>${e}</option>`).join('');
+  const hallOpts = VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('');
+  const scDefault = VENUE.service_charge_pct ?? '';
+  const taxDefault = VENUE.tax_pct ?? '';
   $('#view').innerHTML = `
-    <div class="page-h"><div><h1>Rate calculator</h1><div class="sub">Quick quote — per head or per dish menu</div></div></div>
+    <div class="page-h"><div><h1>Rate calculator</h1><div class="sub">Banquet quote — minimum guarantee, service charge & tax</div></div></div>
     <div class="grid" style="grid-template-columns:1fr 340px;align-items:start">
       <div class="card pad">
-        <div class="tabs">
-          <button class="tab ${calcMode === 'head' ? 'on' : ''}" data-mode="head">Per head</button>
-          <button class="tab ${calcMode === 'dish' ? 'on' : ''}" data-mode="dish">Per dish (menu)</button>
-        </div>
         <div class="two">
-          <div><label class="fl">Guests</label><input class="field" type="number" id="c_guests" placeholder="450"></div>
           <div><label class="fl">Event type</label><select class="field" id="c_event"><option value="">—</option>${evOpts}</select></div>
+          <div><label class="fl">Hall (for rate)</label><select class="field" id="c_hall"><option value="">—</option>${hallOpts}</select></div>
         </div>
-        <div id="c_modebody"></div>
+        <label class="fl" style="margin-top:14px">How is it billed?</label>
+        <div class="tabs">
+          <button class="tab ${calcBasis === 'plate' ? 'on' : ''}" data-basis="plate">Per plate</button>
+          <button class="tab ${calcBasis === 'table' ? 'on' : ''}" data-basis="table">Per table</button>
+        </div>
+        <div id="c_basisbody"></div>
+        <div class="two" style="margin-top:14px">
+          <div><label class="fl">Per-plate rate (Rs)</label><input class="field" type="number" id="c_rate" placeholder="2800"></div>
+          <div><label class="fl">Billable guests</label><input class="field" id="c_bill" readonly></div>
+        </div>
+        <div class="mono" style="margin-top:6px;color:var(--muted)">Pick hall + event to auto-fill the rate from your saved rates.</div>
         <div class="form-sec">Extra / fixed charges</div>
         <div id="c_extras"></div>
         <button type="button" class="btn btn-sec btn-sm" id="c_addextra" style="margin-top:6px">${ic('i-plus')}Add charge</button>
         <div class="two" style="margin-top:16px">
+          <div><label class="fl">Service charge %</label><input class="field" type="number" id="c_sc" step="0.5" min="0" max="100" placeholder="18" value="${scDefault}"></div>
+          <div><label class="fl">Tax / GST %</label><input class="field" type="number" id="c_tax" step="0.5" min="0" max="100" placeholder="16" value="${taxDefault}"></div>
+        </div>
+        <div class="two" style="margin-top:14px">
           <div><label class="fl">Discount (Rs)</label><input class="field" type="number" id="c_disc" placeholder="0"></div>
           <div><label class="fl">Advance received</label><input class="field" type="number" id="c_adv" placeholder="0"></div>
         </div>
@@ -683,83 +698,85 @@ async function renderCalculator() {
         <div class="card-h"><h3>Estimate</h3></div>
         <div id="c_breakdown"></div>
         <div class="totbox"><span class="k">GRAND TOTAL</span><span class="v" id="c_total">Rs 0</span></div>
-        <div class="pr" style="margin-top:8px"><span class="k">Per head (effective)</span><span class="v" id="c_perhead">Rs 0</span></div>
+        <div class="pr" style="margin-top:8px"><span class="k">Per plate (effective)</span><span class="v" id="c_perhead">Rs 0</span></div>
         <button class="btn btn-pri" id="c_book" style="width:100%;margin-top:14px">${ic('i-plus')}Create booking from quote</button>
         <button class="btn btn-sec" id="c_copy" style="width:100%;margin-top:8px">${ic('i-wa')}Copy quote text</button>
       </div>
     </div>`;
 
   const g = (id) => $('#' + id);
+  const num = (id) => Number(g(id)?.value) || 0;
 
-  // Read the whole form into a tidy numbers object.
+  // Billable guests: the minimum-guarantee pax, or tables × seats.
+  function billable() {
+    if (calcBasis === 'table') return num('c_tables') * num('c_seats');
+    return num('c_pax');
+  }
+
+  // Read the whole form into a tidy numbers object following the billing chain:
+  // food → +extras → −discount → +service charge → +tax → grand total.
   function compute() {
-    const guests = Number(g('c_guests').value) || 0;
-    let perHead = 0, dishes = [];
-    if (calcMode === 'head') perHead = Number(g('c_rate')?.value) || 0;
-    else {
-      dishes = [...$('#c_dishes').querySelectorAll('.calc-row')].map((r) => {
-        const i = r.querySelectorAll('input');
-        return { name: i[0].value.trim(), price: Number(i[1].value) || 0 };
-      }).filter((d) => d.name || d.price);
-      perHead = dishes.reduce((s, d) => s + d.price, 0);
-    }
-    const perHeadSub = perHead * guests;
+    const pax = billable();
+    const perPlate = num('c_rate');
+    const food = pax * perPlate;
     const extras = [...$('#c_extras').querySelectorAll('.calc-row')].map((r) => {
       const i = r.querySelectorAll('input');
       return { name: i[0].value.trim() || 'Charge', amt: Number(i[1].value) || 0 };
     }).filter((e) => e.amt);
     const extrasTotal = extras.reduce((s, e) => s + e.amt, 0);
-    const discount = Number(g('c_disc').value) || 0;
-    const grand = Math.max(0, perHeadSub + extrasTotal - discount);
-    const advance = Number(g('c_adv').value) || 0;
-    return { guests, perHead, perHeadSub, dishes, extras, extrasTotal, discount, grand, advance, balance: grand - advance, eff: guests ? grand / guests : 0 };
+    const discount = num('c_disc');
+    const subtotal = Math.max(0, food + extrasTotal - discount);
+    const scPct = num('c_sc'), taxPct = num('c_tax');
+    const serviceCharge = Math.round(subtotal * scPct / 100);
+    const taxBase = subtotal + serviceCharge;
+    const tax = Math.round(taxBase * taxPct / 100);
+    const grand = taxBase + tax;
+    const advance = num('c_adv');
+    return { pax, perPlate, food, extras, extrasTotal, discount, subtotal, scPct, serviceCharge, taxPct, tax, grand, advance, balance: grand - advance, eff: pax ? grand / pax : 0 };
   }
 
   function recalc() {
     const c = compute();
-    const rows = [
-      ['Per-head rate', fmt(c.perHead)],
-      [`Guests × rate (${c.guests} × ${fmt(c.perHead)})`, fmt(c.perHeadSub)],
-      ...c.extras.map((e) => [esc(e.name), fmt(e.amt)]),
-    ];
+    g('c_bill').value = c.pax ? c.pax.toLocaleString('en-IN') : '';
+    const rows = [[`Food (${c.pax} × ${fmt(c.perPlate)})`, fmt(c.food)]];
+    c.extras.forEach((e) => rows.push([esc(e.name), fmt(e.amt)]));
     if (c.discount) rows.push(['Discount', '− ' + fmt(c.discount)]);
+    if (c.scPct) rows.push([`Service charge (${c.scPct}%)`, fmt(c.serviceCharge)]);
+    if (c.taxPct) rows.push([`Tax / GST (${c.taxPct}%)`, fmt(c.tax)]);
     if (c.advance) { rows.push(['Advance received', '− ' + fmt(c.advance)]); rows.push(['Balance', fmt(c.balance)]); }
     $('#c_breakdown').innerHTML = rows.map(([k, v]) => `<div class="pr"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
     g('c_total').textContent = fmt(c.grand);
     g('c_perhead').textContent = fmt(Math.round(c.eff));
   }
 
-  // Fill the per-head rate from saved rate plans when hall + event are chosen.
+  // Fill the per-plate rate from saved rate plans when hall + event are chosen.
   function autofillRate() {
-    const hall = Number(g('c_hall')?.value), ev = g('c_event').value;
+    const hall = Number(g('c_hall').value), ev = g('c_event').value;
     if (!hall || !ev) return;
     const rp = VENUE.rates.find((r) => r.hall_id === hall && r.event_type === ev);
     if (rp) g('c_rate').value = rp.per_head_rate;
   }
 
-  // Per-head vs per-dish inputs.
-  function renderMode() {
-    const b = $('#c_modebody');
-    if (calcMode === 'head') {
-      const hallOpts = VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('');
-      b.innerHTML = `<div class="two">
-        <div><label class="fl">Hall (for rate)</label><select class="field" id="c_hall"><option value="">—</option>${hallOpts}</select></div>
-        <div><label class="fl">Per-head rate (Rs)</label><input class="field" type="number" id="c_rate" placeholder="2800"></div>
-      </div><div class="mono" style="margin-top:6px;color:var(--muted)">Pick hall + event to auto-fill the rate from your saved rates.</div>`;
-      g('c_hall').onchange = () => { autofillRate(); recalc(); };
-      g('c_rate').oninput = recalc;
+  // Per-plate vs per-table inputs.
+  function renderBasis() {
+    const b = $('#c_basisbody');
+    if (calcBasis === 'plate') {
+      b.innerHTML = `<div style="margin-top:10px"><label class="fl">Guaranteed guests (minimum)</label>
+        <input class="field" type="number" id="c_pax" placeholder="500">
+        <div class="mono" style="margin-top:6px;color:var(--muted)">Billed on this count even if fewer attend.</div></div>`;
+      g('c_pax').oninput = recalc;
     } else {
-      b.innerHTML = `<label class="fl">Menu dishes — price per head</label><div id="c_dishes"></div>
-        <button type="button" class="btn btn-sec btn-sm" id="c_adddish" style="margin-top:6px">${ic('i-plus')}Add dish</button>
-        <div class="mono" style="margin-top:6px;color:var(--muted)">Menu per-head = total of every dish price.</div>`;
-      const addDish = (n = '', p = '') => addRow('#c_dishes', 'Dish (e.g. Chicken Karahi)', 'Rs/head', 110, n, p);
-      g('c_adddish').onclick = () => addDish();
-      addDish(); addDish();
+      b.innerHTML = `<div class="two" style="margin-top:10px">
+        <div><label class="fl">Tables</label><input class="field" type="number" id="c_tables" placeholder="50"></div>
+        <div><label class="fl">Seats / table</label><input class="field" type="number" id="c_seats" placeholder="10" value="10"></div>
+      </div><div class="mono" style="margin-top:6px;color:var(--muted)">Billable guests = tables × seats.</div>`;
+      g('c_tables').oninput = recalc;
+      g('c_seats').oninput = recalc;
     }
     recalc();
   }
 
-  // Shared add-row builder for dishes and extra charges.
+  // Add-row builder for extra charges.
   function addRow(container, ph1, ph2, w2, v1 = '', v2 = '') {
     const row = el({ className: 'inline-add calc-row' });
     row.style.marginTop = '8px';
@@ -775,30 +792,33 @@ async function renderCalculator() {
     if (!VENUE.halls.length) { toast('Add a hall first (Settings → Halls)'); return; }
     if (!VENUE.slots.length) { toast('Add slots first (Settings → Slots)'); return; }
     const c = compute();
-    const hall = (calcMode === 'head' && g('c_hall')?.value) ? Number(g('c_hall').value) : VENUE.halls[0].id;
-    openNewBooking({ date: todayISO(), hall, slot: VENUE.slots[0].id, guests: c.guests || null, rate: c.perHead || null, event: g('c_event').value || null });
+    const hall = g('c_hall').value ? Number(g('c_hall').value) : VENUE.halls[0].id;
+    openNewBooking({ date: todayISO(), hall, slot: VENUE.slots[0].id, guests: c.pax || null, rate: c.perPlate || null, event: g('c_event').value || null });
   }
 
   async function copyQuote() {
     const c = compute();
-    const lines = [`${VENUE.name} — Estimate`, '', `Guests: ${c.guests}`];
-    if (calcMode === 'dish' && c.dishes.length) lines.push('Menu: ' + c.dishes.map((d) => d.name).filter(Boolean).join(', '));
-    lines.push(`Per head: ${fmt(c.perHead)}`, `Food (guests × rate): ${fmt(c.perHeadSub)}`);
+    const lines = [`${VENUE.name} — Estimate`, ''];
+    lines.push(calcBasis === 'table' ? `Tables: ${num('c_tables')} × ${num('c_seats')} seats = ${c.pax} guests` : `Guaranteed guests: ${c.pax}`);
+    lines.push(`Per plate: ${fmt(c.perPlate)}`, `Food: ${fmt(c.food)}`);
     c.extras.forEach((e) => lines.push(`${e.name}: ${fmt(e.amt)}`));
     if (c.discount) lines.push(`Discount: − ${fmt(c.discount)}`);
+    if (c.scPct) lines.push(`Service charge (${c.scPct}%): ${fmt(c.serviceCharge)}`);
+    if (c.taxPct) lines.push(`Tax / GST (${c.taxPct}%): ${fmt(c.tax)}`);
     lines.push(`Total: ${fmt(c.grand)}`);
     if (c.advance) lines.push(`Advance: ${fmt(c.advance)}`, `Balance: ${fmt(c.balance)}`);
     try { await navigator.clipboard.writeText(lines.join('\n')); toast('Quote copied — paste into WhatsApp'); }
     catch { toast('Could not copy on this device'); }
   }
 
-  $('#view').querySelectorAll('.tab[data-mode]').forEach((t) => t.onclick = () => { calcMode = t.dataset.mode; renderCalculator(); });
+  $('#view').querySelectorAll('.tab[data-basis]').forEach((t) => t.onclick = () => { calcBasis = t.dataset.basis; renderCalculator(); });
   g('c_addextra').onclick = () => addRow('#c_extras', 'e.g. Decoration', 'Amount', 130);
-  ['c_guests', 'c_disc', 'c_adv'].forEach((id) => g(id).oninput = recalc);
+  ['c_rate', 'c_sc', 'c_tax', 'c_disc', 'c_adv'].forEach((id) => g(id).oninput = recalc);
+  g('c_hall').onchange = () => { autofillRate(); recalc(); };
   g('c_event').onchange = () => { autofillRate(); recalc(); };
   g('c_book').onclick = () => createBookingFromQuote();
   g('c_copy').onclick = () => copyQuote();
-  renderMode();
+  renderBasis();
 }
 
 // ---- Booking detail ----
@@ -1024,6 +1044,10 @@ function setProfile() {
     <div class="two"><div><label class="fl">Min capacity</label><input class="field" type="number" id="s_cmin" value="${v.capacity_min || ''}"></div>
       <div><label class="fl">Max capacity</label><input class="field" type="number" id="s_cmax" value="${v.capacity_max || ''}"></div></div>
     <label class="fl">Facilities</label><div class="chips" id="s_fac">${v.all_facilities.map((f) => `<span class="chip ${v.facilities.includes(f) ? 'on' : ''}" data-f="${f}">${f}</span>`).join('')}</div>
+    <div class="form-sec">Billing defaults</div>
+    <div class="two"><div><label class="fl">Service charge %</label><input class="field" type="number" id="s_sc" step="0.5" min="0" max="100" placeholder="18" value="${v.service_charge_pct ?? ''}"></div>
+      <div><label class="fl">Tax / GST %</label><input class="field" type="number" id="s_tax" step="0.5" min="0" max="100" placeholder="16" value="${v.tax_pct ?? ''}"></div></div>
+    <div class="mono" style="color:var(--muted)">Used to pre-fill the rate calculator. Leave blank if you don't charge them.</div>
     ${locationPickerHTML('s', v)}
     <button class="btn btn-pri" id="s_save" style="margin-top:20px">${ic('i-check')}Save changes</button></div>`;
   setupLocationPicker('s', v, () => $('#s_city').value);
@@ -1033,6 +1057,8 @@ function setProfile() {
     const r = await api.patch('venue', {
       name: $('#s_name').value, phone: $('#s_phone').value, city: $('#s_city').value, area: $('#s_area').value,
       address: $('#s_address').value, capacity_min: Number($('#s_cmin').value) || null, capacity_max: Number($('#s_cmax').value) || null, facilities,
+      service_charge_pct: $('#s_sc').value === '' ? null : Number($('#s_sc').value),
+      tax_pct: $('#s_tax').value === '' ? null : Number($('#s_tax').value),
       ...readPicker('s'),
     });
     if (!r.ok) return toast(r.data.message || 'Could not save. Please try again.');
