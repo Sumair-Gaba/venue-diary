@@ -589,9 +589,10 @@ async function drawCal() {
 async function showDay(date) {
   const data = await api.get(`day?date=${date}&hall=${calState.hall}`);
   const p = $('#dayPanel');
+  const SLOT_TAG = { confirmed: 'Booked', tentative: 'Hold', blocked: 'Blocked' };
   p.innerHTML = `<div class="card-h"><h3>${fmtDate(date)}</h3></div>` + data.slots.map((s) => `
     <div class="slotrow">
-      <div class="grow"><div class="s1">${esc(s.name)}</div>
+      <div class="grow"><div class="s1">${esc(s.name)}${s.status !== 'free' ? ` <span class="pill p-${s.status}"><span class="dt"></span>${SLOT_TAG[s.status]}</span>` : ''}</div>
         <div class="s2">${s.status === 'free' ? 'Available' : s.status === 'blocked' ? 'Blocked' : (s.booking ? esc(s.booking.customer_name) + (s.booking.event_type ? ' · ' + esc(s.booking.event_type) : '') : 'Booked')}</div></div>
       ${s.status === 'free'
         ? `<div style="display:flex;gap:6px"><button class="btn btn-sec btn-sm" data-book="${s.id}">${ic('i-plus')}Book</button><button class="iconbtn" title="Block this slot" data-block="${s.id}">${ic('i-ban')}</button></div>`
@@ -1339,9 +1340,11 @@ function openNewBooking(pre = {}) {
   async function checkAvail() {
     const date = g('f_date').value; if (!date) { g('f_avail').innerHTML = ''; return; }
     const { data } = await api.post('check', { hall: Number(g('f_hall').value), date, slot: Number(g('f_slot').value) });
-    g('f_avail').innerHTML = data.free
-      ? `<div class="ok">${ic('i-check')}This slot is available.</div>`
-      : `<div class="warn">${ic('i-warn')}This slot already has a ${data.conflict?.type === 'block' ? 'block' : 'confirmed booking'}${data.conflict?.customer_name ? ' (' + esc(data.conflict.customer_name) + ')' : ''}. You can still save it as tentative.</div>`;
+    g('f_avail').innerHTML = !data.free
+      ? `<div class="warn">${ic('i-warn')}This slot already has a ${data.conflict?.type === 'block' ? 'block' : 'confirmed booking'}${data.conflict?.customer_name ? ' (' + esc(data.conflict.customer_name) + ')' : ''}. You can still save it as tentative.</div>`
+      : data.hold
+        ? `<div class="note">${ic('i-warn')}This slot has a hold for ${esc(data.hold.customer_name)}${data.hold.slot_name ? ' · ' + esc(data.hold.slot_name) : ''}. You can still book it.</div>`
+        : `<div class="ok">${ic('i-check')}This slot is available.</div>`;
   }
   ['f_hall', 'f_slot', 'f_date'].forEach((id) => g(id).onchange = () => { autofillRate(); checkAvail(); });
   // Prefill from the rate calculator ("Create booking from quote").
