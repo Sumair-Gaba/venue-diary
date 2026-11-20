@@ -113,7 +113,7 @@ let ME = null;
 // Core modules are always available; optional ones depend on what the admin
 // enabled for this banquet (VENUE.features). See FEATURE_CATALOG on the server.
 const CORE_FEATURES = ['home', 'bookings', 'settings', 'booking'];
-const OPTIONAL_FEATURES = ['calendar', 'payments', 'calculator', 'import', 'media', 'decor'];
+const OPTIONAL_FEATURES = ['calendar', 'payments', 'calculator', 'import', 'media', 'decor', 'leads'];
 function featureOn(key) { return CORE_FEATURES.includes(key) || (VENUE?.features || []).includes(key); }
 // Show only the nav links whose feature is enabled.
 function applyFeatureNav() {
@@ -182,7 +182,7 @@ function setOwnerUrl(slug) {
 async function renderLogin() {
   $('#app').hidden = true;
   const { mode, slug } = getPathMode();
-  if (mode === 'owner') return renderOwnerLogin(slug);
+  if (mode === 'owner') return renderPublicVenue(slug);
   $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
     <div class="auth-logo">${ic('i-gear')}</div>
     <h2>Venue Diary</h2>
@@ -192,8 +192,24 @@ async function renderLogin() {
   adminLoginStep();
 }
 // Branded owner login for a specific banquet slug.
-async function renderOwnerLogin(slug) {
-  const v = await api.get('public/venue?slug=' + encodeURIComponent(slug));
+// The branded owner sign-in card (phone + OTP), reached from the public page.
+function showOwnerLoginCard(slug, v) {
+  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
+    <div class="auth-logo">${ic('i-cal')}</div>
+    <h2>${esc(v.name)}</h2>
+    <p class="auth-sub">Owner sign in · phone &amp; OTP</p>
+    <div id="auth-step"></div>
+    <button class="linkbtn" id="backPub" style="margin-top:14px">← Back to venue page</button>
+  </div><div class="auth-foot">${esc([v.city, v.area].filter(Boolean).join(', ') || 'Banquet owner portal')}</div></div>`;
+  $('#backPub').onclick = () => renderPublicVenue(slug, v);
+  phoneStep();
+}
+
+// Public, customer-facing venue page at /<slug>: photos, decor, transparent
+// pricing and an enquiry form. An "Owner login" button opens the sign-in card.
+async function renderPublicVenue(slug, cached) {
+  $('#app').hidden = true;
+  const v = cached || await api.get('public/venue?slug=' + encodeURIComponent(slug));
   if (!v || v.error) {
     $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
       <div class="auth-logo">${ic('i-warn')}</div>
@@ -202,13 +218,67 @@ async function renderOwnerLogin(slug) {
     </div><div class="auth-foot">Venue Diary</div></div>`;
     return;
   }
-  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
-    <div class="auth-logo">${ic('i-cal')}</div>
-    <h2>${esc(v.name)}</h2>
-    <p class="auth-sub">Owner sign in · phone &amp; OTP</p>
-    <div id="auth-step"></div>
-  </div><div class="auth-foot">${esc([v.city, v.area].filter(Boolean).join(', ') || 'Banquet owner portal')}</div></div>`;
-  phoneStep();
+  const loc = [v.city, v.area].filter(Boolean).join(', ');
+  const photos = (v.media || []).filter((m) => m.kind !== 'video').slice(0, 12);
+  const priceOf = (h, s) => (v.hall_prices || []).find((p) => p.hall_id === h && p.slot_id === s)?.price || 0;
+  const adds = (v.pricing || []).filter((r) => r.adj_type === 'flat_add');
+  const cap = v.capacity_min && v.capacity_max ? `${v.capacity_min}–${v.capacity_max} guests` : (v.capacity_max ? `up to ${v.capacity_max} guests` : '');
+  const priceTable = v.halls.length && v.slots.length ? `
+    <div class="pub-pricewrap"><table class="pub-price">
+      <thead><tr><th>Hall</th>${v.slots.map((s) => `<th>${esc(s.name)}</th>`).join('')}</tr></thead>
+      <tbody>${v.halls.map((h) => `<tr><td class="hn">${esc(h.name)}${h.capacity ? `<span>cap ${h.capacity}</span>` : ''}</td>
+        ${v.slots.map((s) => { const p = priceOf(h.id, s.id); return `<td>${p ? fmt(p) : '<span class="pub-dash">—</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    ${adds.length ? `<div class="pub-addnote">${adds.map((r) => `<span>${esc(ruleLabel(r))}: <b>${ruleAdjText(r)}</b></span>`).join('')}</div>` : ''}
+    <div class="pub-note">Prices are the complete, flat event price — no per-head charges. Weekend &amp; season charges apply as shown.</div>` : `<div class="pub-note">Contact us for pricing.</div>`;
+  $('#login').innerHTML = `<div class="pub">
+    <header class="pub-top">
+      <div class="pub-brand"><span class="mk"><svg><use href="#i-cal"/></svg></span>
+        <div><b>${esc(v.name)}</b>${loc ? `<span>${esc(loc)}</span>` : ''}</div></div>
+      <button class="btn btn-sec btn-sm" id="pubLogin">Owner login</button>
+    </header>
+    <div class="pub-wrap">
+      <section class="pub-hero">
+        <h1>${esc(v.name)}</h1>
+        <div class="pub-sub">${esc([loc, cap].filter(Boolean).join(' · '))}${v.address ? `<br>${esc(v.address)}` : ''}</div>
+        ${(v.facilities || []).length ? `<div class="chips">${v.facilities.map((f) => `<span class="chip on">${esc(f)}</span>`).join('')}</div>` : ''}
+      </section>
+      ${photos.length ? `<div class="media-grid" id="pubGal">${photos.map((m) => `<div class="media-item"><img class="lb-img" data-src="${esc(m.url)}" src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>` : ''}
+      <section class="pub-card"><h2>Pricing</h2>${priceTable}</section>
+      ${(v.decor || []).length ? `<section class="pub-card"><h2>Decor &amp; Stage</h2>
+        <div class="media-grid">${v.decor.map((d) => `<div class="media-item decor-card">
+          ${d.image_url ? `<img class="lb-img" data-src="${esc(d.image_url)}" src="${esc(d.image_url)}" loading="lazy" alt="${esc(d.name)}">` : `<div class="decor-noimg">${ic('i-image')}</div>`}
+          <div class="decor-body"><div class="decor-top"><span class="decor-name">${esc(d.name)}</span><span class="decor-price">${fmt(d.price)}</span></div></div>
+        </div>`).join('')}</div></section>` : ''}
+      <section class="pub-card pub-enq">
+        <h2>Send an enquiry</h2>
+        <div class="pub-note" style="margin-bottom:10px">Tell us your date and we'll get back to you.</div>
+        <div id="enqBody">
+          <div class="two"><div><label class="fl">Your name <span class="req">*</span></label><input class="field" id="eq_name" placeholder="Full name"></div>
+            <div><label class="fl">Phone</label><input class="field" id="eq_phone" placeholder="+92 3XX XXXXXXX"></div></div>
+          <div class="two"><div><label class="fl">Event date</label><input class="field" type="date" id="eq_date"></div>
+            <div><label class="fl">Event type</label><select class="field" id="eq_event"><option value="">—</option>${EVENTS.map((e) => `<option>${e}</option>`).join('')}</select></div></div>
+          <div class="two"><div><label class="fl">Guests</label><input class="field" type="number" id="eq_guests" placeholder="450"></div>
+            <div><label class="fl">Hall</label><select class="field" id="eq_hall"><option value="">Any</option>${v.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}</select></div></div>
+          <label class="fl">Message</label><textarea class="field" id="eq_msg" placeholder="Any details or questions…"></textarea>
+          <button class="btn btn-pri" id="eq_send" style="margin-top:14px">${ic('i-wa')}Send enquiry</button>
+        </div>
+      </section>
+    </div>
+    <footer class="pub-foot">Powered by Venue Diary</footer>
+  </div>`;
+  $('#pubLogin').onclick = () => showOwnerLoginCard(slug, v);
+  bindLightbox('#login');
+  $('#eq_send').onclick = busy(async () => {
+    const name = $('#eq_name').value.trim();
+    if (!name) return toast('Please enter your name');
+    const body = { name, phone: $('#eq_phone').value.trim(), event_date: $('#eq_date').value || null,
+      event_type: $('#eq_event').value || null, guests: Number($('#eq_guests').value) || null, hall_id: Number($('#eq_hall').value) || null,
+      message: $('#eq_msg').value.trim() || null };
+    const r = await api.post('public/enquiry?slug=' + encodeURIComponent(slug), body);
+    if (!r.ok) return toast(r.data.message || 'Could not send. Please try again.');
+    $('#enqBody').innerHTML = `<div class="ok">${ic('i-check')}Thank you! Your enquiry has been sent — ${esc(v.name)} will contact you soon.</div>`;
+  });
 }
 function phoneStep() {
   $('#auth-step').innerHTML = `
@@ -441,6 +511,7 @@ async function route() {
     if (page === 'home') return await renderHome();
     if (page === 'calendar') return await renderCalendar();
     if (page === 'bookings') return await renderBookings();
+    if (page === 'leads') return await renderLeads();
     if (page === 'payments') return await renderPayments();
     if (page === 'calculator') return await renderCalculator();
     if (page === 'import') return await renderImport();
@@ -868,6 +939,46 @@ async function renderCalculator() {
   g('c_copy').onclick = () => copyQuote();
   renderDecorPicker();
   recalc();
+}
+
+// ---- Enquiries / leads (from the public page) ----
+async function renderLeads() {
+  setNav('leads');
+  const list = await api.get('leads');
+  const STAT = { new: ['New', 'tentative'], contacted: ['Contacted', 'confirmed'], closed: ['Closed', 'blocked'] };
+  const hallName = (id) => (VENUE.halls.find((h) => h.id === id) || {}).name || '';
+  const pubUrl = '/' + (VENUE.slug || '');
+  $('#view').innerHTML = `<div class="page-h"><div><h1>Enquiries</h1><div class="sub">Customer enquiries from your public page</div></div>
+      <a class="btn btn-sec btn-sm" href="${esc(pubUrl)}" target="_blank" rel="noopener">${ic('i-link')}View public page</a></div>
+    ${list.length ? list.map((l) => {
+      const [label, cls] = STAT[l.status] || STAT.new;
+      const meta = [l.event_type, l.event_date ? fmtDate(l.event_date) : '', l.guests ? l.guests + ' guests' : '', l.hall_id ? hallName(l.hall_id) : ''].filter(Boolean).join(' · ');
+      return `<div class="card pad lead-card">
+        <div class="lead-h"><div><div class="nm">${esc(l.name)}${l.phone ? ` · <span class="muted">${esc(l.phone)}</span>` : ''}</div>
+          ${meta ? `<div class="sub">${esc(meta)}</div>` : ''}</div>
+          <span class="pill p-${cls}"><span class="dt"></span>${label}</span></div>
+        ${l.message ? `<div class="lead-msg">${esc(l.message)}</div>` : ''}
+        <div class="lead-acts">
+          ${l.phone ? `<a class="btn btn-sec btn-sm" href="https://wa.me/${esc(l.phone.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener">${ic('i-wa')}WhatsApp</a>` : ''}
+          <button class="btn btn-sec btn-sm" data-bk="${l.id}">${ic('i-plus')}Create booking</button>
+          ${l.status !== 'contacted' ? `<button class="btn btn-sec btn-sm" data-st="${l.id}" data-v="contacted">Mark contacted</button>` : ''}
+          ${l.status !== 'closed' ? `<button class="btn btn-sec btn-sm" data-st="${l.id}" data-v="closed">Close</button>` : ''}
+          <button class="iconbtn sm" data-del="${l.id}" title="Delete">${ic('i-trash')}</button>
+        </div></div>`;
+    }).join('') : emptyState('i-chat', 'No enquiries yet. Share your public page link so customers can enquire.')}`;
+  const byId = (id) => list.find((x) => x.id === Number(id));
+  $('#view').querySelectorAll('[data-bk]').forEach((b) => b.onclick = () => {
+    const l = byId(b.dataset.bk);
+    openNewBooking({ name: l.name, phone: l.phone, date: l.event_date || todayISO(), event: l.event_type || null,
+      hall: l.hall_id || (VENUE.halls[0] || {}).id, slot: l.slot_id || (VENUE.slots[0] || {}).id, guests: l.guests || null });
+  });
+  $('#view').querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => {
+    await api.patch('leads/' + b.dataset.st, { status: b.dataset.v }); toast('Updated'); renderLeads();
+  });
+  $('#view').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Delete this enquiry?')) return;
+    await api.del('leads/' + b.dataset.del); toast('Deleted'); renderLeads();
+  });
 }
 
 // ---- Booking detail ----
@@ -1538,6 +1649,8 @@ function openNewBooking(pre = {}) {
   ['f_hall', 'f_slot', 'f_date'].forEach((id) => g(id).onchange = () => { autofillPrice(); checkAvail(); });
   // Prefill from the rate calculator ("Create booking from quote").
   if (st.event) { const chip = [...g('f_event').querySelectorAll('.chip')].find((c) => c.dataset.ev === st.event); if (chip) chip.classList.add('on'); }
+  if (st.name) g('f_name').value = st.name;
+  if (st.phone) g('f_phone').value = st.phone;
   if (st.guests) g('f_guests').value = st.guests;
   if (st.price != null) g('f_price').value = st.price;
   else autofillPrice();
