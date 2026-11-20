@@ -72,7 +72,7 @@ let ME = null;
 // Core modules are always available; optional ones depend on what the admin
 // enabled for this banquet (VENUE.features). See FEATURE_CATALOG on the server.
 const CORE_FEATURES = ['home', 'bookings', 'settings', 'booking'];
-const OPTIONAL_FEATURES = ['calendar', 'payments', 'calculator', 'import', 'media'];
+const OPTIONAL_FEATURES = ['calendar', 'payments', 'calculator', 'import', 'media', 'decor'];
 function featureOn(key) { return CORE_FEATURES.includes(key) || (VENUE?.features || []).includes(key); }
 // Show only the nav links whose feature is enabled.
 function applyFeatureNav() {
@@ -658,6 +658,7 @@ async function renderPayments() {
 // stage), minus discount and advance. Turns the estimate into a booking or a
 // WhatsApp-ready quote.
 let calcBasis = 'plate';  // 'plate' = guaranteed pax · 'table' = tables × seats
+let calcDecor = new Set();  // decor/stage catalog item ids selected into the quote
 async function renderCalculator() {
   setNav('calculator');
   const evOpts = EVENTS.map((e) => `<option>${e}</option>`).join('');
@@ -683,6 +684,9 @@ async function renderCalculator() {
           <div><label class="fl">Billable guests</label><input class="field" id="c_bill" readonly></div>
         </div>
         <div class="mono" style="margin-top:6px;color:var(--muted)">Pick hall + event to auto-fill the rate from your saved rates.</div>
+        ${featureOn('decor') && (VENUE.decor || []).length ? `<div class="form-sec">Decor &amp; Stage</div>
+        <div class="mono" style="color:var(--muted);margin-bottom:4px">Tap to add to the quote.</div>
+        <div class="decor-pick" id="c_decor"></div>` : ''}
         <div class="form-sec">Extra / fixed charges</div>
         <div id="c_extras"></div>
         <button type="button" class="btn btn-sec btn-sm" id="c_addextra" style="margin-top:6px">${ic('i-plus')}Add charge</button>
@@ -725,21 +729,24 @@ async function renderCalculator() {
       return { name: i[0].value.trim() || 'Charge', amt: Number(i[1].value) || 0 };
     }).filter((e) => e.amt);
     const extrasTotal = extras.reduce((s, e) => s + e.amt, 0);
+    const decorSel = (VENUE.decor || []).filter((d) => calcDecor.has(d.id));
+    const decorTotal = decorSel.reduce((s, d) => s + (d.price || 0), 0);
     const discount = num('c_disc');
-    const subtotal = Math.max(0, food + extrasTotal - discount);
+    const subtotal = Math.max(0, food + extrasTotal + decorTotal - discount);
     const scPct = num('c_sc'), taxPct = num('c_tax');
     const serviceCharge = Math.round(subtotal * scPct / 100);
     const taxBase = subtotal + serviceCharge;
     const tax = Math.round(taxBase * taxPct / 100);
     const grand = taxBase + tax;
     const advance = num('c_adv');
-    return { pax, perPlate, food, extras, extrasTotal, discount, subtotal, scPct, serviceCharge, taxPct, tax, grand, advance, balance: grand - advance, eff: pax ? grand / pax : 0 };
+    return { pax, perPlate, food, extras, extrasTotal, decorSel, decorTotal, discount, subtotal, scPct, serviceCharge, taxPct, tax, grand, advance, balance: grand - advance, eff: pax ? grand / pax : 0 };
   }
 
   function recalc() {
     const c = compute();
     g('c_bill').value = c.pax ? c.pax.toLocaleString('en-IN') : '';
     const rows = [[`Food (${c.pax} × ${fmt(c.perPlate)})`, fmt(c.food)]];
+    c.decorSel.forEach((d) => rows.push([esc(d.name), fmt(d.price)]));
     c.extras.forEach((e) => rows.push([esc(e.name), fmt(e.amt)]));
     if (c.discount) rows.push(['Discount', '− ' + fmt(c.discount)]);
     if (c.scPct) rows.push([`Service charge (${c.scPct}%)`, fmt(c.serviceCharge)]);
@@ -777,6 +784,22 @@ async function renderCalculator() {
     recalc();
   }
 
+  // Decor/stage catalog cards — tap to add/remove from the quote.
+  function renderDecorPicker() {
+    const box = g('c_decor'); if (!box) return;
+    box.innerHTML = (VENUE.decor || []).map((d) => `
+      <div class="decor-opt ${calcDecor.has(d.id) ? 'on' : ''}" data-id="${d.id}">
+        ${d.image_url ? `<img src="${esc(d.image_url)}" alt="" loading="lazy">` : `<div class="decor-noimg">${ic('i-image')}</div>`}
+        <span class="tick">${ic('i-check')}</span>
+        <div class="decor-opt-b"><span class="nm">${esc(d.name)}</span><span class="pr">${fmt(d.price)}</span></div>
+      </div>`).join('');
+    box.querySelectorAll('.decor-opt').forEach((card) => card.onclick = () => {
+      const id = Number(card.dataset.id);
+      if (calcDecor.has(id)) calcDecor.delete(id); else calcDecor.add(id);
+      card.classList.toggle('on'); recalc();
+    });
+  }
+
   // Add-row builder for extra charges.
   function addRow(container, ph1, ph2, w2, v1 = '', v2 = '') {
     const row = el({ className: 'inline-add calc-row' });
@@ -802,6 +825,7 @@ async function renderCalculator() {
     const lines = [`${VENUE.name} — Estimate`, ''];
     lines.push(calcBasis === 'table' ? `Tables: ${num('c_tables')} × ${num('c_seats')} seats = ${c.pax} guests` : `Guaranteed guests: ${c.pax}`);
     lines.push(`Per plate: ${fmt(c.perPlate)}`, `Food: ${fmt(c.food)}`);
+    c.decorSel.forEach((d) => lines.push(`${d.name}: ${fmt(d.price)}`));
     c.extras.forEach((e) => lines.push(`${e.name}: ${fmt(e.amt)}`));
     if (c.discount) lines.push(`Discount: − ${fmt(c.discount)}`);
     if (c.scPct) lines.push(`Service charge (${c.scPct}%): ${fmt(c.serviceCharge)}`);
@@ -819,6 +843,7 @@ async function renderCalculator() {
   g('c_event').onchange = () => { autofillRate(); recalc(); };
   g('c_book').onclick = () => createBookingFromQuote();
   g('c_copy').onclick = () => copyQuote();
+  renderDecorPicker();
   renderBasis();
 }
 
@@ -941,8 +966,11 @@ let setTab = 'profile';
 async function renderSettings() {
   setNav('settings');
   VENUE = await api.get('venue');
-  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'], ...(featureOn('media') ? [['media', 'Photos & Videos']] : [])];
+  const tabs = [['profile', 'Venue profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'],
+    ...(featureOn('media') ? [['media', 'Photos & Videos']] : []),
+    ...(featureOn('decor') ? [['decor', 'Decor & Stage']] : [])];
   if (setTab === 'media' && !featureOn('media')) setTab = 'profile';
+  if (setTab === 'decor' && !featureOn('decor')) setTab = 'profile';
   $('#view').innerHTML = `<div class="page-h"><h1>Settings</h1></div>
     <div class="tabs">${tabs.map(([k, n]) => `<button class="tab ${k === setTab ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
     <div id="setBody"></div>`;
@@ -952,6 +980,7 @@ async function renderSettings() {
   if (setTab === 'slots') setSlots();
   if (setTab === 'rates') setRates();
   if (setTab === 'media') setMedia();
+  if (setTab === 'decor') setDecor();
 }
 
 // ---- Settings · Photos & Videos ----
@@ -1033,6 +1062,79 @@ async function uploadMedia(files) {
   if (done) toast(`${done} file(s) uploaded`);
   if (failed) toast(`${failed} file(s) failed. Photos always work; videos need a Blob store to be connected.`);
   renderMediaGrid();
+}
+
+// ---- Settings · Decor & Stage ----
+// A priced catalog: each item is a reference photo + name + rate the owner can
+// show customers and drop into a quote. Categories: decor / stage / other.
+const DECOR_CATS = [['decor', 'Decor'], ['stage', 'Stage'], ['other', 'Other']];
+async function setDecor() {
+  $('#setBody').innerHTML = `<div class="card pad" style="max-width:820px">
+    <div class="card-h"><h3>Decor &amp; Stage catalog</h3>
+      <button class="btn btn-pri btn-sm" id="dc_add">${ic('i-plus')}Add item</button></div>
+    <div class="mono" style="color:var(--muted);margin-bottom:12px">Add your decor &amp; stage designs with a reference photo and rate. These show in the rate calculator so you can drop them into a quote.</div>
+    <div class="media-grid" id="dc_grid"></div>
+  </div>`;
+  $('#dc_add').onclick = () => decorForm();
+  await renderDecorGrid();
+}
+async function renderDecorGrid() {
+  const list = await api.get('decor');
+  const catLabel = (c) => (DECOR_CATS.find((x) => x[0] === c) || [, 'Decor'])[1];
+  $('#dc_grid').innerHTML = list.length ? list.map((it) => `
+    <div class="media-item decor-card">
+      ${it.image_url
+        ? `<img class="lb-img" data-src="${esc(it.image_url)}" src="${esc(it.image_url)}" loading="lazy" alt="${esc(it.name)}">`
+        : `<div class="decor-noimg">${ic('i-image')}</div>`}
+      <div class="decor-body">
+        <div class="decor-top"><span class="pill p-free"><span class="dt"></span>${esc(catLabel(it.category))}</span><span class="decor-price">${fmt(it.price)}</span></div>
+        <div class="decor-name">${esc(it.name)}</div>
+        ${it.description ? `<div class="decor-desc">${esc(it.description)}</div>` : ''}
+        <div class="decor-acts">
+          <button class="btn btn-sec btn-sm" data-edit="${it.id}">${ic('i-edit')}Edit</button>
+          <button class="iconbtn sm" data-del="${it.id}" title="Delete">${ic('i-trash')}</button>
+        </div>
+      </div>
+    </div>`).join('') : emptyState('i-image', 'No decor or stage items yet. Tap “Add item”.');
+  bindLightbox('#dc_grid');
+  const byId = (id) => list.find((x) => x.id === Number(id));
+  $('#dc_grid').querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => decorForm(byId(b.dataset.edit)));
+  $('#dc_grid').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Delete this item?')) return;
+    await api.del('decor/' + b.dataset.del); toast('Deleted'); renderDecorGrid();
+  });
+}
+// Add/edit a decor item in a modal, with an in-browser compressed photo upload.
+function decorForm(item = null) {
+  let imageUrl = item?.image_url || null;
+  const catOpts = DECOR_CATS.map(([v, n]) => `<option value="${v}" ${item?.category === v ? 'selected' : ''}>${n}</option>`).join('');
+  modal(item ? 'Edit item' : 'Add decor / stage item', `
+    <label class="fl">Reference photo</label>
+    <div class="decor-up"><div class="decor-preview" id="dc_prev">${imageUrl ? `<img src="${esc(imageUrl)}" alt="">` : ic('i-image')}</div>
+      <div><input type="file" id="dc_file" accept="image/*" hidden>
+        <button type="button" class="btn btn-sec btn-sm" id="dc_pick">${ic('i-upload')}Choose photo</button>
+        <div class="mono" id="dc_upst" style="margin-top:6px;color:var(--muted)">JPG/PNG — auto-compressed.</div></div></div>
+    <label class="fl">Name</label><input class="field" id="dc_name" placeholder="e.g. Floral Stage" value="${esc(item?.name || '')}">
+    <div class="two"><div><label class="fl">Category</label><select class="field" id="dc_cat">${catOpts}</select></div>
+      <div><label class="fl">Rate (Rs)</label><input class="field" type="number" id="dc_price" placeholder="80000" value="${item?.price || ''}"></div></div>
+    <label class="fl">Description (optional)</label><textarea class="field" id="dc_desc" placeholder="What's included…">${esc(item?.description || '')}</textarea>`,
+    `<button class="btn btn-sec" id="dc_cancel">Cancel</button><button class="btn btn-pri" id="dc_save">${ic('i-check')}Save</button>`);
+  const g = (id) => $('#' + id);
+  g('dc_pick').onclick = () => g('dc_file').click();
+  g('dc_file').onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    g('dc_upst').textContent = 'Processing…';
+    try { imageUrl = await imageToDataUrl(file, 1400, 0.82); g('dc_prev').innerHTML = `<img src="${imageUrl}" alt="">`; g('dc_upst').textContent = 'Photo ready'; }
+    catch { g('dc_upst').textContent = 'Could not read this image'; }
+  };
+  g('dc_cancel').onclick = closeModal;
+  g('dc_save').onclick = busy(async () => {
+    const body = { name: g('dc_name').value.trim(), category: g('dc_cat').value, price: Number(g('dc_price').value) || 0, description: g('dc_desc').value.trim() || null, image_url: imageUrl };
+    if (!body.name) return toast('Please enter a name');
+    const r = item ? await api.patch('decor/' + item.id, body) : await api.post('decor', body);
+    if (!r.ok) return toast(r.data.message || 'Could not save. Please try again.');
+    closeModal(); toast('Saved'); renderDecorGrid();
+  });
 }
 function setProfile() {
   const v = VENUE;

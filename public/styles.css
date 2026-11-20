@@ -324,6 +324,31 @@ textarea.field{height:auto;padding:9px 12px;resize:vertical;min-height:58px;line
 .media-meta{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;font-size:11.5px;color:var(--muted);gap:6px}
 .media-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .iconbtn.sm{width:26px;height:26px;border-radius:6px;flex:none}.iconbtn.sm svg{width:13px;height:13px}
+/* decor & stage catalog cards */
+.decor-card{background:var(--paper);display:flex;flex-direction:column}
+.decor-noimg{height:120px;display:grid;place-items:center;background:var(--hover);color:var(--muted2)}
+.decor-noimg svg{width:34px;height:34px}
+.decor-body{padding:9px 10px;display:flex;flex-direction:column;gap:5px}
+.decor-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.decor-price{font-weight:650;font-size:13px}
+.decor-name{font-weight:550;font-size:13.5px;line-height:1.25}
+.decor-desc{font-size:12px;color:var(--muted);line-height:1.35}
+.decor-acts{display:flex;align-items:center;gap:6px;margin-top:4px}
+.decor-up{display:flex;gap:12px;align-items:flex-start;margin-bottom:6px}
+.decor-preview{width:96px;height:72px;flex:none;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--hover);display:grid;place-items:center;color:var(--muted2)}
+.decor-preview img{width:100%;height:100%;object-fit:cover} .decor-preview svg{width:26px;height:26px}
+/* decor picker in the rate calculator */
+.decor-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:8px}
+.decor-opt{border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;cursor:pointer;background:var(--paper);position:relative;transition:border-color .12s,box-shadow .12s}
+.decor-opt:hover{border-color:var(--muted2)}
+.decor-opt.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft,rgba(0,0,0,.06))}
+.decor-opt img,.decor-opt .decor-noimg{height:84px}
+.decor-opt .decor-noimg{width:100%}
+.decor-opt-b{padding:7px 9px;display:flex;flex-direction:column;gap:2px}
+.decor-opt-b .nm{font-size:12.5px;font-weight:550;line-height:1.2}
+.decor-opt-b .pr{font-size:12px;color:var(--muted)}
+.decor-opt .tick{position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:none;place-items:center}
+.decor-opt.on .tick{display:grid} .decor-opt .tick svg{width:12px;height:12px}
 
 /* import table */
 table.imp{width:100%;border-collapse:collapse;font-size:13px}
