@@ -65,6 +65,41 @@ const pill = (status) => `<span class="pill p-${status}"><span class="dt"></span
 const kpi = (icon, n, label) => `<div class="kpi"><div class="ico">${ic(icon)}</div><div class="kmeta"><div class="n">${n}</div><div class="l">${label}</div></div></div>`;
 const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><span>${esc(text)}</span></div>`;
 
+// ---- date-based pricing rules --------------------------------------------
+// Resolve a base per-plate rate against the saved pricing rules for a date.
+// Precedence: a single-date rule beats a date-range (season) rule, which beats
+// a recurring weekday (weekend) rule. Returns the effective rate + rule applied.
+const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function resolvePrice(base, dateISO, rules = (VENUE && VENUE.pricing) || []) {
+  base = Number(base) || 0;
+  if (!dateISO || !rules.length) return { base, effective: base, rule: null };
+  const dow = new Date(dateISO + 'T00:00').getDay();
+  const match = (k) => rules.filter((r) => r.kind === k).find((r) =>
+    k === 'date' ? r.start_date === dateISO
+    : k === 'range' ? (r.start_date && r.end_date && dateISO >= r.start_date && dateISO <= r.end_date)
+    : String(r.weekdays || '').split(',').map(Number).includes(dow));
+  const rule = match('date') || match('range') || match('weekday') || null;
+  if (!rule) return { base, effective: base, rule: null };
+  let effective = base;
+  if (rule.adj_type === 'percent') effective = Math.round(base * (1 + rule.adj_value / 100));
+  else if (rule.adj_type === 'per_plate_add') effective = Math.round(base + rule.adj_value);
+  else if (rule.adj_type === 'per_plate_set') effective = Math.round(rule.adj_value);
+  return { base, effective: Math.max(0, effective), rule };
+}
+function ruleAdjText(r) {
+  if (!r) return '';
+  if (r.adj_type === 'percent') return (r.adj_value >= 0 ? '+' : '') + r.adj_value + '%';
+  if (r.adj_type === 'per_plate_add') return (r.adj_value >= 0 ? '+' : '−') + fmt(Math.abs(r.adj_value)) + '/plate';
+  return fmt(r.adj_value) + '/plate';   // per_plate_set
+}
+function ruleLabel(r) {
+  if (!r) return '';
+  if (r.label) return r.label;
+  if (r.kind === 'weekday') return String(r.weekdays || '').split(',').map(Number).map((n) => WD_SHORT[n]).join('/') + ' rate';
+  if (r.kind === 'range') return 'Season rate';
+  return 'Date rate';
+}
+
 let VENUE = null;
 let ME = null;
 
@@ -673,6 +708,9 @@ async function renderCalculator() {
           <div><label class="fl">Event type</label><select class="field" id="c_event"><option value="">—</option>${evOpts}</select></div>
           <div><label class="fl">Hall (for rate)</label><select class="field" id="c_hall"><option value="">—</option>${hallOpts}</select></div>
         </div>
+        <div style="margin-top:14px"><label class="fl">Event date (for weekend / date rates)</label>
+          <input class="field" type="date" id="c_date">
+          <div class="mono" id="c_pricenote" style="margin-top:6px;color:var(--muted)"></div></div>
         <label class="fl" style="margin-top:14px">How is it billed?</label>
         <div class="tabs">
           <button class="tab ${calcBasis === 'plate' ? 'on' : ''}" data-basis="plate">Per plate</button>
@@ -722,7 +760,9 @@ async function renderCalculator() {
   // food → +extras → −discount → +service charge → +tax → grand total.
   function compute() {
     const pax = billable();
-    const perPlate = num('c_rate');
+    const base = num('c_rate');
+    const pr = resolvePrice(base, g('c_date')?.value);
+    const perPlate = pr.effective;          // after any weekend/date rule
     const food = pax * perPlate;
     const extras = [...$('#c_extras').querySelectorAll('.calc-row')].map((r) => {
       const i = r.querySelectorAll('input');
@@ -739,13 +779,24 @@ async function renderCalculator() {
     const tax = Math.round(taxBase * taxPct / 100);
     const grand = taxBase + tax;
     const advance = num('c_adv');
-    return { pax, perPlate, food, extras, extrasTotal, decorSel, decorTotal, discount, subtotal, scPct, serviceCharge, taxPct, tax, grand, advance, balance: grand - advance, eff: pax ? grand / pax : 0 };
+    return { pax, base, perPlate, priceRule: pr.rule, food, extras, extrasTotal, decorSel, decorTotal, discount, subtotal, scPct, serviceCharge, taxPct, tax, grand, advance, balance: grand - advance, eff: pax ? grand / pax : 0 };
   }
 
   function recalc() {
     const c = compute();
     g('c_bill').value = c.pax ? c.pax.toLocaleString('en-IN') : '';
-    const rows = [[`Food (${c.pax} × ${fmt(c.perPlate)})`, fmt(c.food)]];
+    // Price note under the date: show the rule applied, if any.
+    const note = g('c_pricenote');
+    if (note) note.innerHTML = c.priceRule
+      ? `<span style="color:var(--amber-txt)">${esc(ruleLabel(c.priceRule))} (${ruleAdjText(c.priceRule)}) → effective ${fmt(c.perPlate)}/plate</span>`
+      : (g('c_date')?.value ? 'Base rate (no weekend/date rule for this date).' : 'Pick a date to apply weekend / season / special-date rates.');
+    const rows = [];
+    if (c.priceRule && c.perPlate !== c.base) {
+      rows.push([`Food (${c.pax} × ${fmt(c.base)})`, fmt(c.pax * c.base)]);
+      rows.push([`${esc(ruleLabel(c.priceRule))} (${ruleAdjText(c.priceRule)})`, (c.food - c.pax * c.base >= 0 ? '' : '− ') + fmt(Math.abs(c.food - c.pax * c.base))]);
+    } else {
+      rows.push([`Food (${c.pax} × ${fmt(c.perPlate)})`, fmt(c.food)]);
+    }
     c.decorSel.forEach((d) => rows.push([esc(d.name), fmt(d.price)]));
     c.extras.forEach((e) => rows.push([esc(e.name), fmt(e.amt)]));
     if (c.discount) rows.push(['Discount', '− ' + fmt(c.discount)]);
@@ -817,14 +868,17 @@ async function renderCalculator() {
     if (!VENUE.slots.length) { toast('Add slots first (Settings → Slots)'); return; }
     const c = compute();
     const hall = g('c_hall').value ? Number(g('c_hall').value) : VENUE.halls[0].id;
-    openNewBooking({ date: todayISO(), hall, slot: VENUE.slots[0].id, guests: c.pax || null, rate: c.perPlate || null, event: g('c_event').value || null });
+    openNewBooking({ date: g('c_date').value || todayISO(), hall, slot: VENUE.slots[0].id, guests: c.pax || null, rate: c.perPlate || null, event: g('c_event').value || null });
   }
 
   async function copyQuote() {
     const c = compute();
     const lines = [`${VENUE.name} — Estimate`, ''];
+    if (g('c_date').value) lines.push(`Date: ${g('c_date').value}`);
     lines.push(calcBasis === 'table' ? `Tables: ${num('c_tables')} × ${num('c_seats')} seats = ${c.pax} guests` : `Guaranteed guests: ${c.pax}`);
-    lines.push(`Per plate: ${fmt(c.perPlate)}`, `Food: ${fmt(c.food)}`);
+    if (c.priceRule && c.perPlate !== c.base) lines.push(`Per plate: ${fmt(c.base)} → ${fmt(c.perPlate)} (${ruleLabel(c.priceRule)} ${ruleAdjText(c.priceRule)})`);
+    else lines.push(`Per plate: ${fmt(c.perPlate)}`);
+    lines.push(`Food: ${fmt(c.food)}`);
     c.decorSel.forEach((d) => lines.push(`${d.name}: ${fmt(d.price)}`));
     c.extras.forEach((e) => lines.push(`${e.name}: ${fmt(e.amt)}`));
     if (c.discount) lines.push(`Discount: − ${fmt(c.discount)}`);
@@ -839,6 +893,7 @@ async function renderCalculator() {
   $('#view').querySelectorAll('.tab[data-basis]').forEach((t) => t.onclick = () => { calcBasis = t.dataset.basis; renderCalculator(); });
   g('c_addextra').onclick = () => addRow('#c_extras', 'e.g. Decoration', 'Amount', 130);
   ['c_rate', 'c_sc', 'c_tax', 'c_disc', 'c_adv'].forEach((id) => g(id).oninput = recalc);
+  g('c_date').oninput = recalc;
   g('c_hall').onchange = () => { autofillRate(); recalc(); };
   g('c_event').onchange = () => { autofillRate(); recalc(); };
   g('c_book').onclick = () => createBookingFromQuote();
@@ -1220,7 +1275,13 @@ function setRates() {
       <select class="field" id="nr_hall">${VENUE.halls.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}</select>
       <select class="field" id="nr_event">${EVENTS.map((e) => `<option>${e}</option>`).join('')}</select>
       <input class="field" id="nr_rate" type="number" placeholder="Rate" style="max-width:120px">
-      <button class="btn btn-pri" id="nr_add">${ic('i-plus')}Add</button></div></div>`;
+      <button class="btn btn-pri" id="nr_add">${ic('i-plus')}Add</button></div></div>
+    <div class="card pad" style="max-width:620px;margin-top:16px">
+      <div class="card-h"><h3>Date &amp; weekend pricing</h3>
+        <button class="btn btn-pri btn-sm" id="pr_add">${ic('i-plus')}Add rule</button></div>
+      <div class="mono" style="color:var(--muted);margin-bottom:10px">Bump the per-plate rate for weekends, a season (date range), or a specific date. Applied automatically in the rate calculator &amp; new bookings — most specific wins (date &gt; season &gt; weekend).</div>
+      <div id="pr_list"></div>
+    </div>`;
   $('#setBody').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
     await api.del('rates/' + b.dataset.del); VENUE = await api.get('venue'); setRates(); toast('Rate removed');
   });
@@ -1229,6 +1290,67 @@ function setRates() {
     const r = await api.post('rates', { hall_id: Number($('#nr_hall').value), event_type: $('#nr_event').value, per_head_rate: Number($('#nr_rate').value) });
     if (!r.ok) return toast(r.data.message || 'Could not add this rate. Please try again.');
     VENUE = await api.get('venue'); setRates(); toast('Rate added');
+  });
+  $('#pr_add').onclick = () => pricingForm();
+  renderPricingList();
+}
+// List of saved pricing rules (weekend / season / single-date).
+function renderPricingList() {
+  const rules = VENUE.pricing || [];
+  const when = (r) => r.kind === 'weekday' ? String(r.weekdays || '').split(',').map(Number).map((n) => WD_SHORT[n]).join(', ')
+    : r.kind === 'range' ? `${r.start_date} → ${r.end_date}` : r.start_date;
+  const adj = (r) => r.adj_type === 'per_plate_set' ? `set ${ruleAdjText(r)}` : ruleAdjText(r);
+  $('#pr_list').innerHTML = rules.length ? rules.map((r) => `<div class="row">
+    <div class="grow"><div class="nm">${esc(ruleLabel(r))}</div><div class="dt">${esc(when(r))}</div></div>
+    <div class="amt">${esc(adj(r))}</div>
+    <button class="iconbtn sm" data-pedit="${r.id}" title="Edit" style="margin-left:10px">${ic('i-edit')}</button>
+    <button class="iconbtn sm" data-pdel="${r.id}" title="Delete">${ic('i-trash')}</button></div>`).join('')
+    : `<div class="empty">No date rules yet. Tap “Add rule”.</div>`;
+  $('#pr_list').querySelectorAll('[data-pedit]').forEach((b) => b.onclick = () => pricingForm(rules.find((x) => x.id === Number(b.dataset.pedit))));
+  $('#pr_list').querySelectorAll('[data-pdel]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Delete this rule?')) return;
+    await api.del('pricing/' + b.dataset.pdel); VENUE = await api.get('venue'); setRates(); toast('Rule deleted');
+  });
+}
+// Add / edit a pricing rule. Fields change with the chosen rule type.
+function pricingForm(rule = null) {
+  let kind = rule?.kind || 'weekday';
+  const selDays = new Set(rule ? String(rule.weekdays || '').split(',').map(Number) : [0, 6]); // default Sat+Sun
+  const kinds = [['weekday', 'Weekend / weekday'], ['range', 'Date range (season)'], ['date', 'Single date']];
+  const adjs = [['percent', 'Uplift %'], ['per_plate_add', '+ Rs per plate'], ['per_plate_set', 'Set Rs per plate']];
+  modal(rule ? 'Edit pricing rule' : 'Add pricing rule', `
+    <label class="fl">Rule type</label>
+    <select class="field" id="pf_kind">${kinds.map(([v, n]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <div id="pf_when" style="margin-top:12px"></div>
+    <div class="two" style="margin-top:12px">
+      <div><label class="fl">Adjustment</label><select class="field" id="pf_adjtype">${adjs.map(([v, n]) => `<option value="${v}" ${rule?.adj_type === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div><label class="fl">Value</label><input class="field" type="number" id="pf_val" step="0.5" placeholder="15" value="${rule?.adj_value ?? ''}"></div>
+    </div>
+    <label class="fl">Label (optional)</label><input class="field" id="pf_label" placeholder="e.g. Weekend, Wedding season" value="${esc(rule?.label || '')}">`,
+    `<button class="btn btn-sec" id="pf_cancel">Cancel</button><button class="btn btn-pri" id="pf_save">${ic('i-check')}Save</button>`);
+  const g = (id) => $('#' + id);
+  function renderWhen() {
+    kind = g('pf_kind').value;
+    if (kind === 'weekday') {
+      g('pf_when').innerHTML = `<label class="fl">Days</label><div class="chips" id="pf_days">${WD_SHORT.map((n, i) => `<span class="chip ${selDays.has(i) ? 'on' : ''}" data-d="${i}">${n}</span>`).join('')}</div>`;
+      g('pf_days').querySelectorAll('.chip').forEach((c) => c.onclick = () => { const d = Number(c.dataset.d); selDays.has(d) ? selDays.delete(d) : selDays.add(d); c.classList.toggle('on'); });
+    } else if (kind === 'range') {
+      g('pf_when').innerHTML = `<div class="two"><div><label class="fl">From</label><input class="field" type="date" id="pf_start" value="${rule?.start_date || ''}"></div>
+        <div><label class="fl">To</label><input class="field" type="date" id="pf_end" value="${rule?.end_date || ''}"></div></div>`;
+    } else {
+      g('pf_when').innerHTML = `<label class="fl">Date</label><input class="field" type="date" id="pf_start" value="${rule?.start_date || ''}">`;
+    }
+  }
+  renderWhen();
+  g('pf_kind').onchange = renderWhen;
+  g('pf_cancel').onclick = closeModal;
+  g('pf_save').onclick = busy(async () => {
+    const body = { kind, adj_type: g('pf_adjtype').value, adj_value: Number(g('pf_val').value) || 0, label: g('pf_label').value.trim() || null };
+    if (kind === 'weekday') body.weekdays = [...selDays].sort().join(',');
+    else { body.start_date = g('pf_start').value; if (kind === 'range') body.end_date = g('pf_end').value; }
+    const r = rule ? await api.patch('pricing/' + rule.id, body) : await api.post('pricing', body);
+    if (!r.ok) return toast(r.data.message || 'Could not save this rule.');
+    closeModal(); VENUE = await api.get('venue'); setRates(); toast('Saved');
   });
 }
 
