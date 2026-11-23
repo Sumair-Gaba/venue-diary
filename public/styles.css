@@ -294,8 +294,10 @@ textarea.field{height:auto;padding:9px 12px;resize:vertical;min-height:58px;line
 .admin-wrap{min-height:100vh;background:var(--canvas)}
 .admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px clamp(16px,4vw,40px);background:var(--sidebar);border-bottom:1px solid var(--line);flex-wrap:wrap}
 .admin-actions{display:flex;gap:10px;align-items:center}
-.admin-body{padding:28px clamp(16px,4vw,40px) 60px;max-width:1100px}
-.admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.admin-body{padding:28px clamp(16px,4vw,40px) 60px}
+.admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+@media(min-width:1200px){.admin-grid{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:1600px){.admin-grid{grid-template-columns:repeat(5,1fr)}}
 .vcard{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
 .vcard:hover{border-color:var(--muted2);box-shadow:var(--sh)}
 .vcard-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
