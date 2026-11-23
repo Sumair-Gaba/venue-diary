@@ -391,6 +391,7 @@ async function renderAdmin() {
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn btn-sec btn-sm" data-feat="${v.id}" style="flex:none">${ic('i-gear')}Features</button>
         <button class="btn btn-sec btn-sm" data-open="${v.id}" style="flex:1">Open dashboard ${ic('i-chev-r')}</button>
+        <button class="btn btn-danger btn-sm" data-del="${v.id}" style="flex:none" title="Delete banquet">${ic('i-trash')}</button>
       </div>
     </div>`;
   const draw = () => {
@@ -414,6 +415,16 @@ async function renderAdmin() {
     });
     if ($('#pg_prev')) $('#pg_prev').onclick = () => { page--; draw(); window.scrollTo(0, 0); };
     if ($('#pg_next')) $('#pg_next').onclick = () => { page++; draw(); window.scrollTo(0, 0); };
+    $('#ad_grid').querySelectorAll('[data-del]').forEach((b) => b.onclick = async (e) => {
+      e.stopPropagation();
+      const v = list.find((x) => x.id === Number(b.dataset.del));
+      const warn = v.booking_count > 0 ? `\n\n⚠ This has ${v.booking_count} booking(s) — they will be permanently deleted too.` : '';
+      if (!confirm(`Delete "${v.name}"? This permanently removes the banquet and all its data and cannot be undone.${warn}`)) return;
+      const r = await api.del('admin/venues/' + v.id);
+      if (!r.ok) return toast(r.data.message || 'Could not delete. Please try again.');
+      const i = list.indexOf(v); if (i >= 0) list.splice(i, 1);
+      toast('Banquet deleted'); draw();
+    });
   };
   let t; $('#ad_search').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim().toLowerCase(); page = 1; draw(); }, 200); };
   $('#ad_area').onchange = (e) => { area = e.target.value; page = 1; draw(); };

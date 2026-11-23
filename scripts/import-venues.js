@@ -14,18 +14,13 @@
 // in place and never creates duplicates.
 
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { pool, migrate, get, run, insert, slugify } from '../lib/db.js';
 
-const args = process.argv.slice(2);
-const dry = args.includes('--dry');
-const file = args.find((a) => !a.startsWith('--'));
-if (!file) {
-  console.error('Usage: node --env-file=.env scripts/import-venues.js <overpass.json> [--dry]');
-  process.exit(1);
-}
-
-const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-const elements = Array.isArray(raw.elements) ? raw.elements : (Array.isArray(raw) ? raw : []);
+// Only run the import when executed directly (so other scripts can import the
+// helpers below — e.g. deriveArea — without triggering a venue import).
+const isMain = import.meta.url === pathToFileURL(process.argv[1] || '').href;
+const dry = process.argv.includes('--dry');
 
 // A slug no other venue uses (an existing row for the SAME osm ref keeps its slug).
 async function uniqueSlug(name, ref) {
@@ -105,7 +100,14 @@ async function importOne(el) {
   return 'created';
 }
 
-(async () => {
+if (isMain) (async () => {
+  const file = process.argv.slice(2).find((a) => !a.startsWith('--'));
+  if (!file) {
+    console.error('Usage: node --env-file=.env scripts/import-venues.js <overpass.json> [--dry]');
+    process.exit(1);
+  }
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const elements = Array.isArray(raw.elements) ? raw.elements : (Array.isArray(raw) ? raw : []);
   if (!dry) await migrate();
   const counts = { created: 0, updated: 0, skipped: 0, preview: 0 };
   console.log(`${dry ? 'PREVIEW (no writes) — ' : ''}processing ${elements.length} OSM elements…\n`);
