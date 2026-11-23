@@ -8,3 +8,6 @@ venue.db-*
 
 .env
 venue-local.db*
+
+# Downloaded data exports (OSM/Overpass venue imports) — can be large
+data/*.json
