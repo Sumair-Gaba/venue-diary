@@ -1000,6 +1000,9 @@ async function renderBookingDetail(id) {
         <div class="row"><div class="grow mono">Guests</div><b>${b.guest_count || '—'}</b></div>
         ${b.requirements ? `<div class="row"><div class="grow mono">Requirements</div><b style="max-width:60%;text-align:right">${esc(b.requirements)}</b></div>` : ''}
         ${b.notes ? `<div class="row"><div class="grow mono">Notes</div><b style="max-width:60%;text-align:right">${esc(b.notes)}</b></div>` : ''}
+        ${featureOn('beo') && b.beo_arrival ? `<div class="row"><div class="grow mono">Arrival</div><b>${esc(b.beo_arrival)}</b></div>` : ''}
+        ${featureOn('beo') && b.beo_meal_time ? `<div class="row"><div class="grow mono">Meal served</div><b>${esc(b.beo_meal_time)}</b></div>` : ''}
+        ${featureOn('beo') && b.beo_contact ? `<div class="row"><div class="grow mono">On-site contact</div><b style="max-width:60%;text-align:right">${esc(b.beo_contact)}</b></div>` : ''}
         <div class="card-h" style="margin-top:22px"><h3>Payments</h3><button class="btn btn-sec btn-sm" id="addPay">${ic('i-plus')}Add payment</button></div>
         <div id="payList"></div>
         ${b.notifications && b.notifications.length ? `<div class="card-h" style="margin-top:22px"><h3>Notifications</h3></div><div id="notifs"></div>` : ''}
@@ -1012,6 +1015,7 @@ async function renderBookingDetail(id) {
           <div class="bar"><i style="width:${pct}%"></i></div></div>
         <button class="btn btn-sec" id="waBtn">${ic('i-wa')}Send WhatsApp reminder</button>
         <button class="btn btn-sec" id="smsBtn">${ic('i-chat')}Send SMS reminder</button>
+        ${featureOn('beo') && b.status !== 'cancelled' ? `<button class="btn btn-sec" id="beoBtn">${ic('i-book')}Print event sheet (BEO)</button>` : ''}
         ${b.status === 'tentative' ? `<button class="btn btn-pri" id="confirmBtn">${ic('i-check')}Confirm booking</button>` : ''}
         ${b.status === 'confirmed' ? `<button class="btn btn-sec" id="completeBtn">${ic('i-check')}Mark completed</button>` : ''}
         ${b.status !== 'cancelled' ? `<button class="btn btn-danger" id="cancelBtn">${ic('i-trash')}Cancel booking</button>` : ''}
@@ -1021,6 +1025,7 @@ async function renderBookingDetail(id) {
   if ($('#notifs')) $('#notifs').innerHTML = b.notifications.map((n) => `<div class="row"><div class="grow"><div class="nm">${n.template.replace(/_/g, ' ')}</div><div class="dt">${new Date(n.sent_at).toLocaleString('en-GB')}</div></div><span class="pill p-confirmed"><span class="dt"></span>${cap(n.status)}</span></div>`).join('');
   $('#addPay').onclick = () => openAddPayment(b);
   if ($('#editBtn')) $('#editBtn').onclick = () => openEditBooking(b);
+  if ($('#beoBtn')) $('#beoBtn').onclick = () => printBEO(b);
   // Build the reminder message once (balance reminder if money is due, else an event reminder).
   const reminderMsg = () => b.balance > 0 ? msgBalance(b.customer_name, b.event_date, b.balance) : msgEvent(b.customer_name, b.event_date, b.hall_name);
   $('#waBtn').onclick = () => {
@@ -1049,6 +1054,83 @@ async function renderBookingDetail(id) {
     if (!r.ok) return toast(r.data.message || 'Could not cancel. Please try again.');
     toast('Booking cancelled'); renderBookingDetail(id);
   });
+}
+
+// ---- Banquet Event Order (BEO) — printable staff sheet ----
+// Opens a clean, print-first A4 document in a new window built from the booking
+// + venue details. Staff get one sheet with pax, timings, menu, setup, special
+// requests and the payment position. Self-contained (inline CSS) so it prints
+// identically anywhere and needs no server round-trip.
+function printBEO(b) {
+  const v = VENUE || {};
+  const ml = (s) => esc(s || '').replace(/\n/g, '<br>');          // multi-line → <br>
+  const venueLine = [v.area, v.city].filter(Boolean).join(', ');
+  const addr = [v.address, venueLine].filter(Boolean).join(' · ');
+  const row = (k, val) => val ? `<tr><th>${k}</th><td>${val}</td></tr>` : '';
+  const block = (title, body) => body ? `<div class="sec"><h2>${title}</h2><div class="body">${body}</div></div>` : '';
+  const printedOn = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Event sheet — ${esc(b.customer_name)}</title>
+  <style>
+    *{box-sizing:border-box} html,body{margin:0;padding:0}
+    body{font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;background:#f3f4f6}
+    .sheet{max-width:820px;margin:18px auto;background:#fff;padding:36px 40px;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:14px}
+    .top .venue{font-size:20px;font-weight:700} .top .meta{font-size:12px;color:#555;margin-top:3px}
+    .top .right{text-align:right} .top h1{font-size:16px;letter-spacing:1px;margin:0;text-transform:uppercase}
+    .top .right .meta{margin-top:4px}
+    table.kv{width:100%;border-collapse:collapse;margin:16px 0}
+    table.kv th{text-align:left;width:150px;color:#555;font-weight:600;vertical-align:top;padding:5px 8px 5px 0;font-size:13px}
+    table.kv td{padding:5px 0;vertical-align:top;border-bottom:1px solid #eee}
+    .grid2{display:flex;gap:28px} .grid2 .col{flex:1}
+    .sec{margin-top:18px} .sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#555;border-bottom:1px solid #ddd;padding-bottom:4px;margin:0 0 8px}
+    .sec .body{white-space:normal;min-height:22px}
+    .pay{margin-top:18px;border:1px solid #ddd;border-radius:8px;overflow:hidden}
+    .pay div{display:flex;justify-content:space-between;padding:8px 14px;border-bottom:1px solid #eee}
+    .pay div:last-child{border-bottom:0} .pay .tot{font-weight:700;background:#fafafa}
+    .sign{display:flex;gap:40px;margin-top:46px} .sign .s{flex:1;border-top:1px solid #111;padding-top:6px;font-size:12px;color:#555}
+    .foot{margin-top:24px;text-align:center;color:#999;font-size:11px}
+    .noprint{text-align:center;margin:14px}
+    .noprint button{font:inherit;padding:9px 20px;border:0;border-radius:8px;background:#111;color:#fff;cursor:pointer}
+    @media print{body{background:#fff} .sheet{box-shadow:none;margin:0;max-width:none;padding:0} .noprint{display:none}}
+  </style></head><body>
+  <div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
+  <div class="sheet">
+    <div class="top">
+      <div><div class="venue">${esc(v.name || 'Banquet')}</div><div class="meta">${esc(addr)}${v.phone ? ' · ' + esc(v.phone) : ''}</div></div>
+      <div class="right"><h1>Banquet Event Order</h1><div class="meta">Booking #${b.id} · ${cap(b.status)}<br>Printed ${esc(printedOn)}</div></div>
+    </div>
+    <div class="grid2">
+      <div class="col"><table class="kv">
+        ${row('Customer', esc(b.customer_name))}
+        ${row('Phone', esc(b.customer_phone || '—'))}
+        ${row('Event', esc(b.event_type || '—'))}
+        ${row('Guests (pax)', b.guest_count || '—')}
+      </table></div>
+      <div class="col"><table class="kv">
+        ${row('Date', fmtDate(b.event_date))}
+        ${row('Function', esc(b.slot_name || '—'))}
+        ${row('Hall', esc(b.hall_name || '—'))}
+        ${row('Arrival', esc(b.beo_arrival || '—'))}
+        ${row('Meal served', esc(b.beo_meal_time || '—'))}
+      </table></div>
+    </div>
+    ${block('Menu / Food', ml(b.beo_menu))}
+    ${block('Setup &amp; Seating', ml(b.beo_setup))}
+    ${block('Special requests', ml(b.requirements))}
+    ${block('On-site contact', esc(b.beo_contact || ''))}
+    <div class="pay">
+      <div><span>Total</span><span>${fmt(b.total_amount)}</span></div>
+      <div><span>Received</span><span>${fmt(b.paid)}</span></div>
+      <div class="tot"><span>Balance due</span><span>${fmt(b.balance)}</span></div>
+    </div>
+    <div class="sign"><div class="s">Prepared by (venue)</div><div class="s">Confirmed by (client)</div></div>
+    <div class="foot">Generated by Venue Diary · ${esc(v.name || '')}</div>
+  </div>
+  <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},250);});<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups to open the event sheet'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 // ---- Import ----
@@ -1683,7 +1765,14 @@ function openEditBooking(b) {
     <div class="two"><div><label class="fl">Guests</label><input class="field" type="number" id="e_guests" value="${b.guest_count || ''}"></div>
       <div><label class="fl">Total amount</label><input class="field" type="number" id="e_total" value="${b.total_amount || 0}"></div></div>
     <label class="fl">Additional requirements</label><textarea class="field" id="e_req">${esc(b.requirements || '')}</textarea>
-    <label class="fl">Notes (internal)</label><textarea class="field" id="e_notes">${esc(b.notes || '')}</textarea>`,
+    <label class="fl">Notes (internal)</label><textarea class="field" id="e_notes">${esc(b.notes || '')}</textarea>
+    ${featureOn('beo') ? `
+    <div class="form-sec">Event order (BEO) — staff sheet</div>
+    <div class="two"><div><label class="fl">Guest arrival time</label><input class="field" id="e_arrival" value="${esc(b.beo_arrival || '')}" placeholder="8:00 PM"></div>
+      <div><label class="fl">Meal / serving time</label><input class="field" id="e_meal" value="${esc(b.beo_meal_time || '')}" placeholder="9:30 PM"></div></div>
+    <label class="fl">On-site contact (name · phone)</label><input class="field" id="e_contact" value="${esc(b.beo_contact || '')}" placeholder="Event manager · 0300…">
+    <label class="fl">Menu / food</label><textarea class="field" id="e_menu" placeholder="Starters, main course, dessert…">${esc(b.beo_menu || '')}</textarea>
+    <label class="fl">Setup &amp; seating</label><textarea class="field" id="e_setup" placeholder="Stage, seating layout, table count, decor…">${esc(b.beo_setup || '')}</textarea>` : ''}`,
     `<button class="btn btn-sec" id="e_cancel">Cancel</button><button class="btn btn-pri" id="e_save">Save</button>`);
   let event = b.event_type;
   $('#e_event').querySelectorAll('.chip').forEach((c) => c.onclick = () => { $('#e_event').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); event = c.dataset.ev; });
@@ -1694,6 +1783,11 @@ function openEditBooking(b) {
       customer_name: $('#e_name').value.trim(), customer_phone: $('#e_phone').value.trim(), event_type: event,
       guest_count: Number($('#e_guests').value) || null, total_amount: Number($('#e_total').value) || 0,
       notes: $('#e_notes').value.trim() || null, requirements: $('#e_req').value.trim() || null,
+      ...(featureOn('beo') ? {
+        beo_arrival: $('#e_arrival').value.trim() || null, beo_meal_time: $('#e_meal').value.trim() || null,
+        beo_contact: $('#e_contact').value.trim() || null, beo_menu: $('#e_menu').value.trim() || null,
+        beo_setup: $('#e_setup').value.trim() || null,
+      } : {}),
     });
     if (!r.ok) return toast(r.data.message || 'Could not update. Please try again.');
     closeModal(); toast('Booking updated'); renderBookingDetail(b.id);
