@@ -44,15 +44,33 @@ function buildAddress(t) {
   return parts.length ? parts.join(', ') : null;
 }
 
+// Known Karachi localities (most-specific first) — used to pull a real area out
+// of the address when OSM has no addr:suburb tag. Not invented: only set when
+// the name actually appears in the venue's real address string.
+export const KARACHI_AREAS = [
+  'North Nazimabad', 'Gulshan-e-Bahar', 'Gulshan-e-Iqbal', 'Gulistan-e-Johar', 'Gulistan-e-Jauhar',
+  'Federal B Area', 'FB Area', 'DHA', 'Defence', 'Clifton', 'PECHS', 'P.E.C.H.S', 'Bahadurabad',
+  'Shahra-e-Faisal', 'Shah Faisal', 'Malir', 'Korangi', 'Landhi', 'Orangi', 'Liaquatabad',
+  'Nazimabad', 'Gulberg', 'Saddar', 'Lyari', 'SITE', 'Baldia', 'New Karachi', 'North Karachi',
+  'Gadap', 'Model Colony', 'Tariq Road', 'Buffer Zone', 'Bufferzone', 'Nipa', 'Surjani', 'Manghopir', 'Kemari',
+];
+export function deriveArea(address) {
+  if (!address) return null;
+  const hay = address.toLowerCase();
+  for (const a of KARACHI_AREAS) if (hay.includes(a.toLowerCase())) return a;
+  return null;
+}
+
 function fieldsOf(el) {
   const t = el.tags || {};
+  const address = buildAddress(t);
   return {
     name: String(t.name || '').trim(),
     ref: `${el.type}/${el.id}`,
     lat: el.lat ?? el.center?.lat ?? null,
     lon: el.lon ?? el.center?.lon ?? null,
-    area: t['addr:suburb'] || t['addr:neighbourhood'] || t['addr:place'] || t['addr:district'] || null,
-    address: buildAddress(t),
+    area: t['addr:suburb'] || t['addr:neighbourhood'] || t['addr:place'] || t['addr:district'] || deriveArea(address) || null,
+    address,
     phone: t.phone || t['contact:phone'] || t.mobile || t['contact:mobile'] || null,
     website: t.website || t['contact:website'] || null,
   };

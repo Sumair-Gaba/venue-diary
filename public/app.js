@@ -353,6 +353,7 @@ async function renderAdmin() {
   $('#app').hidden = true;
   const list = await api.get('admin/venues');
   if (!FEATURE_CAT) FEATURE_CAT = (await api.get('admin/features')).catalog || [];
+  const areas = [...new Set(list.map((v) => v.area).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $('#login').innerHTML = `<div class="admin-wrap">
     <div class="admin-top">
       <div class="brand"><span class="mk">${ic('i-cal')}</span><div><b>VENUE DIARY</b><span>ADMIN PANEL</span></div></div>
@@ -362,13 +363,25 @@ async function renderAdmin() {
       </div>
     </div>
     <div class="admin-body">
-      <div class="page-h"><div><h1>Banquets</h1><div class="sub">${list.length} registered</div></div></div>
+      <div class="page-h"><div><h1>Banquets</h1><div class="sub" id="ad_count">${list.length} registered</div></div></div>
+      <div class="ad-filters" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+        <input class="field" id="ad_search" placeholder="Search by name…" style="flex:1;min-width:200px;margin:0">
+        <select class="field" id="ad_area" style="flex:none;width:auto;min-width:170px;margin:0">
+          <option value="">All areas</option>
+          ${areas.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join('')}
+        </select>
+      </div>
       <div class="admin-grid" id="ad_grid"></div>
+      <div id="ad_pager" style="display:flex;justify-content:center;align-items:center;gap:14px;margin:26px 0 8px"></div>
     </div></div>`;
   $('#ad_logout').onclick = () => { if (confirm('Log out?')) logout(); };
   $('#ad_new').onclick = registerBanquetModal;
-  $('#ad_grid').innerHTML = list.length ? list.map((v) => `
+
+  const PER_PAGE = 30;
+  let page = 1, q = '', area = '';
+  const card = (v) => `
     <div class="vcard">
+      ${v.thumb ? `<div class="vthumb" style="margin:-2px -2px 12px;height:150px;border-radius:12px 12px 0 0;overflow:hidden;background:#eee"><img src="${esc(v.thumb)}" loading="lazy" style="width:100%;height:100%;object-fit:cover" alt=""></div>` : ''}
       <div class="vcard-h"><div class="vname">${esc(v.name)}</div><span class="pill p-confirmed"><span class="dt"></span>${v.hall_count} halls</span></div>
       <div class="vmeta">${ic('i-home')} ${esc(v.address || [v.area, v.city].filter(Boolean).join(', ') || '—')}</div>
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
@@ -379,14 +392,32 @@ async function renderAdmin() {
         <button class="btn btn-sec btn-sm" data-feat="${v.id}" style="flex:none">${ic('i-gear')}Features</button>
         <button class="btn btn-sec btn-sm" data-open="${v.id}" style="flex:1">Open dashboard ${ic('i-chev-r')}</button>
       </div>
-    </div>`).join('') : emptyState('i-home', 'No banquets registered yet. Tap "Register new banquet" to add one.');
-  $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = busy(() => openBanquet(Number(b.dataset.open))));
-  $('#ad_grid').querySelectorAll('[data-feat]').forEach((b) => b.onclick = () => manageFeaturesModal(list.find((v) => v.id === Number(b.dataset.feat))));
-  $('#ad_grid').querySelectorAll('[data-copy]').forEach((b) => b.onclick = async (e) => {
-    e.stopPropagation();
-    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Owner link copied'); }
-    catch { toast(b.dataset.copy); }
-  });
+    </div>`;
+  const draw = () => {
+    const filtered = list.filter((v) =>
+      (!area || v.area === area) && (!q || v.name.toLowerCase().includes(q)));
+    const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    if (page > pages) page = pages;
+    const slice = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+    $('#ad_count').textContent = `${filtered.length} banquet${filtered.length === 1 ? '' : 's'}${area ? ' in ' + area : ''}${q ? ` matching “${q}”` : ''}`;
+    $('#ad_grid').innerHTML = slice.length ? slice.map(card).join('') : emptyState('i-home', 'No banquets match your filters.');
+    $('#ad_pager').innerHTML = filtered.length > PER_PAGE ? `
+      <button class="btn btn-sec btn-sm" id="pg_prev" ${page <= 1 ? 'disabled' : ''}>${ic('i-chev-l')}Prev</button>
+      <span class="mono">Page ${page} of ${pages}</span>
+      <button class="btn btn-sec btn-sm" id="pg_next" ${page >= pages ? 'disabled' : ''}>Next${ic('i-chev-r')}</button>` : '';
+    $('#ad_grid').querySelectorAll('[data-open]').forEach((b) => b.onclick = busy(() => openBanquet(Number(b.dataset.open))));
+    $('#ad_grid').querySelectorAll('[data-feat]').forEach((b) => b.onclick = () => manageFeaturesModal(list.find((v) => v.id === Number(b.dataset.feat))));
+    $('#ad_grid').querySelectorAll('[data-copy]').forEach((b) => b.onclick = async (e) => {
+      e.stopPropagation();
+      try { await navigator.clipboard.writeText(b.dataset.copy); toast('Owner link copied'); }
+      catch { toast(b.dataset.copy); }
+    });
+    if ($('#pg_prev')) $('#pg_prev').onclick = () => { page--; draw(); window.scrollTo(0, 0); };
+    if ($('#pg_next')) $('#pg_next').onclick = () => { page++; draw(); window.scrollTo(0, 0); };
+  };
+  let t; $('#ad_search').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim().toLowerCase(); page = 1; draw(); }, 200); };
+  $('#ad_area').onchange = (e) => { area = e.target.value; page = 1; draw(); };
+  draw();
 }
 async function openBanquet(id) {
   ADMIN_VENUE = id;
