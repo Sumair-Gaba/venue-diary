@@ -370,7 +370,7 @@ async function renderAdmin() {
   $('#ad_grid').innerHTML = list.length ? list.map((v) => `
     <div class="vcard">
       <div class="vcard-h"><div class="vname">${esc(v.name)}</div><span class="pill p-confirmed"><span class="dt"></span>${v.hall_count} halls</span></div>
-      <div class="vmeta">${ic('i-home')} ${esc([v.city, v.area].filter(Boolean).join(', ') || '—')}</div>
+      <div class="vmeta">${ic('i-home')} ${esc(v.address || [v.area, v.city].filter(Boolean).join(', ') || '—')}</div>
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
       <div class="vmeta">${ic('i-book')} ${v.booking_count} bookings</div>
       <div class="vmeta">${ic('i-gear')} ${(v.features || []).length} of ${FEATURE_CAT.length} features on</div>

@@ -61,7 +61,7 @@ function fieldsOf(el) {
 // Obvious non-venues the broad name search catches (photographers, studios,
 // salons, caterers that aren't themselves a hall). Dropped so the directory
 // stays banquets/marquees/lawns.
-const NOT_A_VENUE = /photograph|studio|salon|beauty|boutique|caterer|catering service|travel|real estate|builders/i;
+const NOT_A_VENUE = /photograph|studio|\bsalon\b|beauty|boutique|cater|decoration|\bdecor\b|decorator|tent service|wedding card|wedding dress|wedding gaoon|gown|crockery|bedsheet|\bfabric\b|marriage bureau|marriage service|marriage berou|rishta|\bprinter\b|printing|photo album|album maker|event planner|event management|event solution|event organiser|event organizer|eventish|event delight|\bproduction|balloons|attestation|certificate|arrangement shop|real estate|builders|\btravel\b|\bplanner\b|services$|digital/i;
 
 async function importOne(el) {
   const f = fieldsOf(el);
