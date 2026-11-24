@@ -243,7 +243,7 @@ async function renderPublicVenue(slug, cached) {
         <div class="pub-sub">${esc([loc, cap].filter(Boolean).join(' · '))}${v.address ? `<br>${esc(v.address)}` : ''}</div>
         ${(v.facilities || []).length ? `<div class="chips">${v.facilities.map((f) => `<span class="chip on">${esc(f)}</span>`).join('')}</div>` : ''}
       </section>
-      ${photos.length ? `<div class="media-grid" id="pubGal">${photos.map((m) => `<div class="media-item"><img class="lb-img" data-src="${esc(m.url)}" src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>` : ''}
+      <div class="pub-gal">${carouselHTML(photos.map((m) => m.url), { h: 360, round: '16px' })}</div>
       <section class="pub-card"><h2>Pricing</h2>${priceTable}</section>
       ${(v.decor || []).length ? `<section class="pub-card"><h2>Decor &amp; Stage</h2>
         <div class="media-grid">${v.decor.map((d) => `<div class="media-item decor-card">
@@ -268,7 +268,7 @@ async function renderPublicVenue(slug, cached) {
     <footer class="pub-foot">Powered by Venue Diary</footer>
   </div>`;
   $('#pubLogin').onclick = () => showOwnerLoginCard(slug, v);
-  bindLightbox('#login');
+  initCarousels('#login'); bindLightbox('#login');
   $('#eq_send').onclick = busy(async () => {
     const name = $('#eq_name').value.trim();
     if (!name) return toast('Please enter your name');
@@ -381,7 +381,7 @@ async function renderAdmin() {
   let page = 1, q = '', area = '';
   const card = (v) => `
     <div class="vcard">
-      ${v.thumb ? `<div class="vthumb" style="margin:-2px -2px 12px;height:150px;border-radius:12px 12px 0 0;overflow:hidden;background:#eee"><img src="${esc(v.thumb)}" loading="lazy" style="width:100%;height:100%;object-fit:cover" alt=""></div>` : ''}
+      <div style="margin:-2px -2px 12px">${carouselHTML(v.photos, { h: 160, round: '12px 12px 0 0' })}</div>
       <div class="vcard-h"><div class="vname">${esc(v.name)}</div><span class="pill p-confirmed"><span class="dt"></span>${v.hall_count} halls</span></div>
       <div class="vmeta">${ic('i-home')} ${esc(v.address || [v.area, v.city].filter(Boolean).join(', ') || '—')}</div>
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
@@ -402,6 +402,7 @@ async function renderAdmin() {
     const slice = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
     $('#ad_count').textContent = `${filtered.length} banquet${filtered.length === 1 ? '' : 's'}${area ? ' in ' + area : ''}${q ? ` matching “${q}”` : ''}`;
     $('#ad_grid').innerHTML = slice.length ? slice.map(card).join('') : emptyState('i-home', 'No banquets match your filters.');
+    initCarousels('#ad_grid'); bindLightbox('#ad_grid');
     $('#ad_pager').innerHTML = filtered.length > PER_PAGE ? `
       <button class="btn btn-sec btn-sm" id="pg_prev" ${page <= 1 ? 'disabled' : ''}>${ic('i-chev-l')}Prev</button>
       <span class="mono">Page ${page} of ${pages}</span>
@@ -607,7 +608,7 @@ async function renderHome() {
   $('#todayList').innerHTML = d.todays.length ? d.todays.map((b) => rowBooking(b)).join('') : emptyState('i-cal', 'No events scheduled for today.');
   $('#baqList').innerHTML = d.outstanding.length ? d.outstanding.slice(0, 6).map((b) => rowBooking(b, true)).join('') : emptyState('i-check', 'All payments cleared.');
   bindRows();
-  bindLightbox('#view');
+  initCarousels('#view'); bindLightbox('#view');
 }
 // Wire every .lb-img within a container to open the lightbox.
 function bindLightbox(root) {
@@ -664,6 +665,44 @@ function openLightbox(url, kind = 'image') {
 }
 function closeLightbox() { $('#lightbox') && $('#lightbox').remove(); }
 
+// ---- image carousel -------------------------------------------------------
+// A swipeable photo carousel. `photos` is an array of image URLs. When empty it
+// renders a clean "No photo" placeholder — never a stock/dummy image. Arrows,
+// dots and the counter appear only when there is more than one photo. Call
+// initCarousels(root) after inserting the HTML to wire the controls.
+function carouselHTML(photos, { h = 150, round = '12px', lightbox = true } = {}) {
+  const imgs = (photos || []).filter(Boolean);
+  const style = `--ch:${h}px;--cr:${round}`;
+  if (!imgs.length)
+    return `<div class="carousel is-empty" style="${style}"><div class="carousel-noimg">${ic('i-image')}<span>No photo</span></div></div>`;
+  const slides = imgs.map((u) => `<div class="carousel-slide"><img ${lightbox ? `class="lb-img" data-src="${esc(u)}"` : ''} src="${esc(u)}" loading="lazy" alt=""></div>`).join('');
+  const multi = imgs.length > 1;
+  const nav = multi ? `<button class="carousel-nav prev" type="button" aria-label="Previous photo">${ic('i-chev-l')}</button><button class="carousel-nav next" type="button" aria-label="Next photo">${ic('i-chev-r')}</button>` : '';
+  const dots = multi ? `<div class="carousel-dots">${imgs.map((_, i) => `<button class="cdot${i ? '' : ' on'}" type="button" data-i="${i}" aria-label="Photo ${i + 1}"></button>`).join('')}</div>` : '';
+  const count = multi ? `<span class="carousel-count">1/${imgs.length}</span>` : '';
+  return `<div class="carousel" style="${style}"><div class="carousel-track">${slides}</div>${nav}${dots}${count}</div>`;
+}
+// Wire prev/next, dots and manual-swipe syncing for every carousel in a root.
+function initCarousels(root) {
+  (root ? $(root) : document).querySelectorAll('.carousel').forEach((c) => {
+    if (c.dataset.wired) return;
+    c.dataset.wired = '1';
+    const track = c.querySelector('.carousel-track');
+    const slides = track ? [...track.children] : [];
+    if (slides.length < 2) return;
+    let i = 0;
+    const dots = [...c.querySelectorAll('.cdot')];
+    const count = c.querySelector('.carousel-count');
+    const sync = () => { dots.forEach((d, k) => d.classList.toggle('on', k === i)); if (count) count.textContent = `${i + 1}/${slides.length}`; };
+    const go = (n) => { i = (n + slides.length) % slides.length; track.scrollTo({ left: i * track.clientWidth, behavior: 'smooth' }); sync(); };
+    const prev = c.querySelector('.carousel-nav.prev'), next = c.querySelector('.carousel-nav.next');
+    if (prev) prev.onclick = (e) => { e.stopPropagation(); go(i - 1); };
+    if (next) next.onclick = (e) => { e.stopPropagation(); go(i + 1); };
+    dots.forEach((d) => d.onclick = (e) => { e.stopPropagation(); go(Number(d.dataset.i)); });
+    let st; track.addEventListener('scroll', () => { clearTimeout(st); st = setTimeout(() => { const n = Math.round(track.scrollLeft / track.clientWidth); if (n !== i) { i = n; sync(); } }, 80); }, { passive: true });
+  });
+}
+
 function alertRowHTML(a) {
   const when = a.date ? fmtDate(a.date) : '';
   const extra = a.type === 'balance' && a.amount ? ' · ' + fmt(a.amount) : '';
@@ -680,9 +719,8 @@ function alertRowHTML(a) {
 function galleryCardHTML() {
   if (!featureOn('media')) return '';
   const imgs = (VENUE.media || []).filter((m) => m.kind !== 'video').slice(0, 8);
-  const body = imgs.length
-    ? `<div class="media-grid">${imgs.map((m) => `<div class="media-item"><img class="lb-img" data-src="${esc(m.url)}" src="${esc(m.url)}" loading="lazy" alt=""></div>`).join('')}</div>`
-    : emptyState('i-upload', 'No photos yet. Add some in Settings → Photos & Videos.');
+  const body = carouselHTML(imgs.map((m) => m.url), { h: 240, round: '12px' })
+    + (imgs.length ? '' : `<div class="sub" style="margin-top:10px;text-align:center">No photos yet. Add some in Settings → Photos &amp; Videos.</div>`);
   return `<div class="card pad" style="margin-top:18px"><div class="card-h"><h3>Venue photos</h3><a href="#/settings">Manage</a></div>${body}</div>`;
 }
 function rowBooking(b, showBal) {
