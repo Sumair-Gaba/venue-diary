@@ -6,6 +6,13 @@ import { handleBlobUpload } from '../lib/blob.js';
 
 export default async function handler(req, res) {
   try {
+    // CORS: the consumer mobile app / web client calls this API cross-origin.
+    // Tokens travel in the Authorization header (not cookies), so `*` is safe.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Venue-Id');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+
     const url = new URL(req.url, `https://${req.headers.host}`);
     const segs = url.pathname.replace(/^\/api\//, '').split('/').filter(Boolean);
 

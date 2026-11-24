@@ -35,6 +35,13 @@ function serveStatic(res, pathname) {
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
+    // CORS for the consumer app/web client (tokens are in headers, not cookies).
+    if (url.pathname.startsWith('/api/')) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Venue-Id');
+      if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+    }
     // Vercel Blob client-upload token endpoint (special response shape).
     if (url.pathname === '/api/media/upload' && req.method === 'POST') {
       const body = await readBody(req);
