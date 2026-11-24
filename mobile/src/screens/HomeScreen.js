@@ -48,6 +48,7 @@ export default function HomeScreen({ navigation }) {
   const openReels = (index) => navigation.navigate('Reels', { items: reels, index });
   const openExplore = (params) => navigation.navigate('ExploreTab', params);
   const openVenue = (v) => navigation.navigate('Venue', { slug: v.slug, name: v.name });
+  const openMap = () => navigation.navigate('Map');
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={C.primary} size="large" /></View>;
 
@@ -81,6 +82,18 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Near me (map) */}
+      <TouchableOpacity style={styles.nearCard} activeOpacity={0.9} onPress={openMap}>
+        <LinearGradient colors={['#2D7FF9', '#1E5FD0']} style={styles.nearGrad}>
+          <View style={styles.nearIcon}><Ionicons name="navigate" size={22} color="#fff" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.nearTitle}>Find venues near you</Text>
+            <Text style={styles.nearSub}>Open the map & pick a radius around your location</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="#fff" />
+        </LinearGradient>
+      </TouchableOpacity>
 
       {/* Venue Reels */}
       {reels.length > 0 && (
@@ -128,18 +141,27 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Browse by area */}
+      {/* Browse by area — compact horizontal row (not a big open list) */}
       {areas.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { paddingHorizontal: 16 }]}>Browse by area</Text>
-          <View style={styles.areaWrap}>
-            {areas.map((a) => (
-              <TouchableOpacity key={a.area} style={styles.areaChip} activeOpacity={0.8} onPress={() => openExplore({ area: a.area })}>
-                <Text style={styles.areaText} numberOfLines={1}>{a.area}</Text>
-                <Text style={styles.areaCount}>{a.count}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>Browse by area</Text>
+            <TouchableOpacity onPress={() => openExplore({})}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
           </View>
+          <FlatList
+            data={areas.slice(0, 10)}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(it) => 'a' + it.area}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.areaChip} activeOpacity={0.8} onPress={() => openExplore({ area: item.area })}>
+                <Ionicons name="location-outline" size={14} color={C.primary} />
+                <Text style={styles.areaText} numberOfLines={1}>{item.area}</Text>
+                <Text style={styles.areaCount}>{item.count}</Text>
+              </TouchableOpacity>
+            )}
+          />
         </View>
       )}
     </ScrollView>
@@ -163,6 +185,11 @@ const styles = StyleSheet.create({
   cat: { alignItems: 'center', gap: 7, width: 72 },
   catIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line },
   catText: { fontSize: 11.5, color: C.text, fontWeight: '600', textAlign: 'center' },
+  nearCard: { marginHorizontal: 16, marginTop: 4, borderRadius: 18, overflow: 'hidden' },
+  nearGrad: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  nearIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  nearTitle: { color: '#fff', fontWeight: '800', fontSize: 15.5 },
+  nearSub: { color: 'rgba(255,255,255,0.9)', fontSize: 12.5, marginTop: 2 },
   section: { marginTop: 10, marginBottom: 6 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: C.text, letterSpacing: -0.3 },

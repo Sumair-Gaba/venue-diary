@@ -16,6 +16,7 @@ export const api = {
   venues: ({ q = '', area = '', page = 1, limit = 24 } = {}) => getJSON('/public/venues?' + qs({ q, area, page, limit })),
   areas: () => getJSON('/public/areas'),
   reels: ({ page = 1, limit = 15 } = {}) => getJSON('/public/reels?' + qs({ page, limit })),
+  near: ({ lat, lng, radius = 5 } = {}) => getJSON('/public/near?' + qs({ lat, lng, radius })),
   venue: (slug) => getJSON('/public/venue?slug=' + encodeURIComponent(slug)),
   enquire: (slug, body) => fetch(BASE_URL + '/public/enquiry?slug=' + encodeURIComponent(slug), {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

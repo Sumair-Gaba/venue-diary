@@ -24,7 +24,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-image"
+      "expo-image",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Venue Diary uses your location to show banquets near you on the map."
+        }
+      ]
     ],
     "extra": {
       "eas": {

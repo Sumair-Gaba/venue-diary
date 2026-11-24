@@ -12,6 +12,7 @@ import ExploreScreen from './src/screens/ExploreScreen';
 import SavedScreen from './src/screens/SavedScreen';
 import VenueScreen from './src/screens/VenueScreen';
 import ReelsScreen from './src/screens/ReelsScreen';
+import MapScreen from './src/screens/MapScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { getUser } from './src/store';
 import { C } from './src/theme';
@@ -62,6 +63,7 @@ export default function App() {
             <Stack.Screen name="Tabs" component={Tabs} />
             <Stack.Screen name="Venue" component={VenueScreen} />
             <Stack.Screen name="Reels" component={ReelsScreen} options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="Map" component={MapScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       ) : (
