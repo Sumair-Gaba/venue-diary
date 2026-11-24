@@ -1,5 +1,6 @@
-// Explore: a photo-forward venue grid with a search box and an area filter.
-// Backed by GET /api/public/venues (paginated). Tapping a card opens the venue.
+// Explore / Hall Finder: a photo-forward venue grid with search and an area
+// filter. Backed by GET /api/public/venues (paginated). Accepts { q, area,
+// focus } params from Home (category taps, area taps, search focus).
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
@@ -8,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import { C, R } from '../theme';
 
-export default function ExploreScreen({ navigation }) {
+export default function ExploreScreen({ navigation, route }) {
   const [items, setItems] = useState([]);
   const [areas, setAreas] = useState([]);
   const [q, setQ] = useState('');
@@ -19,6 +20,7 @@ export default function ExploreScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const insets = useSafeAreaInsets();
   const deb = useRef(null);
+  const inputRef = useRef(null);
 
   const load = useCallback(async (p, query, ar) => {
     setLoading(true);
@@ -26,32 +28,34 @@ export default function ExploreScreen({ navigation }) {
       const r = await api.venues({ q: query, area: ar, page: p });
       setPages(r.pages); setTotal(r.total); setPage(r.page);
       setItems((cur) => (p === 1 ? r.items : [...cur, ...r.items]));
-    } catch (e) { /* keep current */ } finally { setLoading(false); }
+    } catch {} finally { setLoading(false); }
   }, []);
 
   useEffect(() => { api.areas().then(setAreas).catch(() => {}); }, []);
-  useEffect(() => { load(1, q, area); }, [area]); // eslint-disable-line
+
+  // React to params from Home (category / area / search-focus) and initial load.
+  useEffect(() => {
+    const p = route.params || {};
+    const nq = p.q || ''; const na = p.area || '';
+    setQ(nq); setArea(na);
+    load(1, nq, na);
+    if (p.focus) setTimeout(() => inputRef.current?.focus(), 350);
+  }, [route.params]); // eslint-disable-line
 
   const onSearch = (t) => {
     setQ(t);
     clearTimeout(deb.current);
     deb.current = setTimeout(() => load(1, t, area), 300);
   };
+  const pickArea = (a) => { setArea(a); load(1, q, a); };
 
   const header = (
     <View style={styles.header}>
-      <Text style={styles.h1}>Find your venue</Text>
-      <Text style={styles.sub}>{total ? `${total} banquets in Karachi` : 'Browse Karachi banquets'}</Text>
+      <Text style={styles.h1}>Hall Finder</Text>
+      <Text style={styles.sub}>{total ? `${total} venues in Karachi` : 'Browse Karachi venues'}</Text>
       <View style={styles.searchBox}>
         <Ionicons name="search" size={18} color={C.muted} />
-        <TextInput
-          style={styles.search}
-          placeholder="Search by name…"
-          placeholderTextColor={C.muted}
-          value={q}
-          onChangeText={onSearch}
-          returnKeyType="search"
-        />
+        <TextInput ref={inputRef} style={styles.search} placeholder="Search by name…" placeholderTextColor={C.muted} value={q} onChangeText={onSearch} returnKeyType="search" />
         {!!q && <TouchableOpacity onPress={() => onSearch('')}><Ionicons name="close-circle" size={18} color={C.muted} /></TouchableOpacity>}
       </View>
       <FlatList
@@ -64,9 +68,9 @@ export default function ExploreScreen({ navigation }) {
         renderItem={({ item }) => {
           const on = area === item.area;
           return (
-            <TouchableOpacity style={[styles.chip, on && styles.chipOn]} onPress={() => setArea(item.area)} activeOpacity={0.8}>
+            <TouchableOpacity style={[styles.chip, on && styles.chipOn]} onPress={() => pickArea(item.area)} activeOpacity={0.8}>
               <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
-                {item.area ? item.area : 'All areas'}{item.area ? ` (${item.count})` : ''}
+                {item.area ? `${item.area} (${item.count})` : 'All areas'}
               </Text>
             </TouchableOpacity>
           );

@@ -1,6 +1,7 @@
-// Full-screen vertical "reels" feed of venues. Each reel plays a photo
-// auto-reel (Ken-Burns) with a gradient overlay, venue info and quick actions
-// (WhatsApp enquiry, details). Swipe up for the next venue.
+// Full-screen vertical reel viewer, opened from the Home "Venue Reels" carousel.
+// Each reel plays a photo auto-reel (Ken-Burns) with a gradient overlay, venue
+// info and quick actions. Receives { items, index } from Home; falls back to
+// fetching if opened directly.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,11 +11,13 @@ import KenBurns from '../components/KenBurns';
 import { api, waLink, BASE_URL } from '../api';
 import { C } from '../theme';
 
-export default function ReelsScreen({ navigation }) {
-  const [reels, setReels] = useState([]);
+export default function ReelsScreen({ navigation, route }) {
+  const initial = route.params?.items || [];
+  const startIndex = route.params?.index || 0;
+  const [reels, setReels] = useState(initial);
   const [page, setPage] = useState(1);
-  const [active, setActive] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState(startIndex);
+  const [loading, setLoading] = useState(initial.length === 0);
   const [h, setH] = useState(0);
   const insets = useSafeAreaInsets();
   const more = useRef(true);
@@ -24,9 +27,9 @@ export default function ReelsScreen({ navigation }) {
       const r = await api.reels({ page: p });
       more.current = (r.items || []).length > 0;
       setReels((cur) => (p === 1 ? r.items : [...cur, ...r.items]));
-    } catch (e) { /* offline — keep what we have */ } finally { setLoading(false); }
+    } catch {} finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(1); }, [load]);
+  useEffect(() => { if (initial.length === 0) load(1); }, [load]); // eslint-disable-line
 
   const onViewable = useRef(({ viewableItems }) => {
     if (viewableItems.length) setActive(viewableItems[0].index || 0);
@@ -51,6 +54,7 @@ export default function ReelsScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           snapToInterval={h}
           decelerationRate="fast"
+          initialScrollIndex={startIndex}
           getItemLayout={(_, i) => ({ length: h, offset: h * i, index: i })}
           onViewableItemsChanged={onViewable}
           viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
@@ -59,20 +63,15 @@ export default function ReelsScreen({ navigation }) {
           renderItem={({ item, index }) => (
             <View style={{ height: h, backgroundColor: C.dark }}>
               <KenBurns photos={item.photos} active={index === active} />
-              <LinearGradient colors={['rgba(0,0,0,0.35)', 'transparent', 'transparent', 'rgba(0,0,0,0.9)']} style={StyleSheet.absoluteFill} />
+              <LinearGradient colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent', 'rgba(0,0,0,0.9)']} style={StyleSheet.absoluteFill} />
 
-              <View style={[styles.brand, { top: insets.top + 6 }]}>
-                <Text style={styles.brandText}>Venue<Text style={{ color: C.gold }}>Diary</Text></Text>
-                <Text style={styles.brandSub}>Karachi banquets</Text>
-              </View>
-
-              <View style={[styles.side, { bottom: insets.bottom + 150 }]}>
+              <View style={[styles.side, { bottom: insets.bottom + 120 }]}>
                 <Action icon="logo-whatsapp" label="Enquire" onPress={() => enquire(item)} />
                 <Action icon="information-circle" label="Details" onPress={() => goVenue(item)} />
                 <Action icon="share-social" label="Share" onPress={() => Linking.openURL(`${siteUrl}/${item.slug}`)} />
               </View>
 
-              <View style={[styles.info, { paddingBottom: insets.bottom + 96 }]}>
+              <View style={[styles.info, { paddingBottom: insets.bottom + 28 }]}>
                 <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
                 {!!item.area && (
                   <View style={styles.row}>
@@ -89,6 +88,11 @@ export default function ReelsScreen({ navigation }) {
           )}
         />
       )}
+
+      <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={() => navigation.goBack()} activeOpacity={0.85}>
+        <Ionicons name="chevron-back" size={24} color="#fff" />
+      </TouchableOpacity>
+      <Text style={[styles.title, { top: insets.top + 14 }]}>Venue Reels</Text>
     </View>
   );
 }
@@ -105,9 +109,8 @@ function Action({ icon, label, onPress }) {
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: C.dark },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.dark },
-  brand: { position: 'absolute', left: 16 },
-  brandText: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
-  brandSub: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 },
+  back: { position: 'absolute', left: 12, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
+  title: { position: 'absolute', alignSelf: 'center', color: '#fff', fontSize: 16, fontWeight: '700' },
   side: { position: 'absolute', right: 12, alignItems: 'center', gap: 20 },
   action: { alignItems: 'center', gap: 5 },
   actionBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },

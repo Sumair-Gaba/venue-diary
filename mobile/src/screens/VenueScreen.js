@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Carousel from '../components/Carousel';
 import { api, waLink } from '../api';
+import { isFav, toggleFav } from '../store';
 import { C, R } from '../theme';
 
 const fmt = (n) => 'Rs ' + Number(n || 0).toLocaleString('en-IN');
@@ -17,9 +18,12 @@ export default function VenueScreen({ route, navigation }) {
   const [form, setForm] = useState({ name: '', phone: '', date: '' });
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [fav, setFav] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => { api.venue(slug).then(setV).catch(() => {}).finally(() => setLoading(false)); }, [slug]);
+  useEffect(() => { isFav(slug).then(setFav); }, [slug]);
+  const onFav = async () => { if (!v) return; const favs = await toggleFav({ ...v, slug }); setFav(favs.some((x) => x.slug === slug)); };
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={C.primary} size="large" /></View>;
   if (!v || v.error) return <View style={styles.center}><Text style={{ color: C.muted }}>Venue not found.</Text></View>;
@@ -50,6 +54,9 @@ export default function VenueScreen({ route, navigation }) {
           <Carousel photos={photos} height={320} />
           <TouchableOpacity style={[styles.back, { top: insets.top + 8 }]} onPress={() => navigation.goBack()} activeOpacity={0.85}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.heart, { top: insets.top + 8 }]} onPress={onFav} activeOpacity={0.85}>
+            <Ionicons name={fav ? 'heart' : 'heart-outline'} size={22} color={fav ? '#FF5A7A' : '#fff'} />
           </TouchableOpacity>
         </View>
 
@@ -120,6 +127,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg },
   back: { position: 'absolute', left: 14, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
+  heart: { position: 'absolute', right: 14, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
   body: { padding: 16 },
   name: { fontSize: 24, fontWeight: '800', color: C.text, letterSpacing: -0.4, lineHeight: 29 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
