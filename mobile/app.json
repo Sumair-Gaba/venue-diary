@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "Venue Diary",
-    "slug": "venue-diary",
+    "slug": "sumair-gaba",
+    "owner": "sumairgabas-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -24,6 +25,11 @@
     },
     "plugins": [
       "expo-image"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f2571d78-d581-45a9-b8f2-325e7b746309"
+      }
+    }
   }
 }
