@@ -6,10 +6,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Carousel from '../components/Carousel';
 import { api, waLink } from '../api';
-import { isFav, toggleFav } from '../store';
+import { isFav, toggleFav, getUser } from '../store';
 import { C, R } from '../theme';
 
 const fmt = (n) => 'Rs ' + Number(n || 0).toLocaleString('en-IN');
+
+// A row of stars; pass onPress to make it an input.
+function Stars({ value = 0, size = 16, onPress }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 2 }}>
+      {[1, 2, 3, 4, 5].map((n) => {
+        const ic = <Ionicons key={n} name={n <= value ? 'star' : 'star-outline'} size={size} color={C.gold} />;
+        return onPress ? <TouchableOpacity key={n} onPress={() => onPress(n)} hitSlop={6}>{ic}</TouchableOpacity> : ic;
+      })}
+    </View>
+  );
+}
 
 export default function VenueScreen({ route, navigation }) {
   const { slug, name } = route.params;
@@ -19,11 +31,26 @@ export default function VenueScreen({ route, navigation }) {
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [fav, setFav] = useState(false);
+  const [rev, setRev] = useState({ show: false, rating: 0, comment: '', name: '', sending: false, sent: false });
   const insets = useSafeAreaInsets();
 
   useEffect(() => { api.venue(slug).then(setV).catch(() => {}).finally(() => setLoading(false)); }, [slug]);
   useEffect(() => { isFav(slug).then(setFav); }, [slug]);
+  useEffect(() => { getUser().then((u) => setRev((r) => ({ ...r, name: u?.name && u.name !== 'Guest' ? u.name : '' }))); }, []);
   const onFav = async () => { if (!v) return; const favs = await toggleFav({ ...v, slug }); setFav(favs.some((x) => x.slug === slug)); };
+
+  const submitReview = async () => {
+    if (!rev.name.trim()) return Alert.alert('Please enter your name');
+    if (!rev.rating) return Alert.alert('Please choose a rating');
+    setRev((r) => ({ ...r, sending: true }));
+    try {
+      const res = await api.review(slug, { name: rev.name.trim(), rating: rev.rating, comment: rev.comment.trim() || null });
+      if (res && (res.ok || res.id)) {
+        const fresh = await api.venue(slug); setV(fresh);
+        setRev((r) => ({ ...r, show: false, sent: true, rating: 0, comment: '', sending: false }));
+      } else { Alert.alert('Could not post', res?.message || 'Please try again.'); setRev((r) => ({ ...r, sending: false })); }
+    } catch { Alert.alert('Network error'); setRev((r) => ({ ...r, sending: false })); }
+  };
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={C.primary} size="large" /></View>;
   if (!v || v.error) return <View style={styles.center}><Text style={{ color: C.muted }}>Venue not found.</Text></View>;
@@ -117,6 +144,47 @@ export default function VenueScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Reviews */}
+          <Text style={styles.sectionH}>Reviews{v.rating_count ? ` (${v.rating_count})` : ''}</Text>
+          {v.rating_count > 0 && (
+            <View style={styles.ratingRow}>
+              <Text style={styles.ratingBig}>{Number(v.rating).toFixed(1)}</Text>
+              <View>
+                <Stars value={Math.round(v.rating)} size={16} />
+                <Text style={styles.ratingCount}>{v.rating_count} review{v.rating_count > 1 ? 's' : ''}</Text>
+              </View>
+            </View>
+          )}
+          {(v.reviews || []).map((r, i) => (
+            <View key={i} style={styles.revItem}>
+              <View style={styles.revTop}>
+                <Text style={styles.revName}>{r.name}</Text>
+                <Stars value={r.rating} size={13} />
+              </View>
+              {!!r.comment && <Text style={styles.revComment}>{r.comment}</Text>}
+            </View>
+          ))}
+          {!(v.reviews || []).length && <Text style={styles.muted}>No reviews yet — be the first to review!</Text>}
+
+          {rev.sent ? (
+            <View style={[styles.ok, { marginTop: 12 }]}><Ionicons name="checkmark-circle" size={20} color={C.wa} /><Text style={styles.okText}>Thanks for your review!</Text></View>
+          ) : rev.show ? (
+            <View style={[styles.formCard, { marginTop: 12 }]}>
+              <Text style={styles.revFormLabel}>Your rating</Text>
+              <Stars value={rev.rating} size={30} onPress={(n) => setRev((r) => ({ ...r, rating: n }))} />
+              <TextInput style={[styles.input, { marginTop: 10 }]} placeholder="Your name *" placeholderTextColor={C.muted} value={rev.name} onChangeText={(t) => setRev((r) => ({ ...r, name: t }))} />
+              <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top', paddingTop: 12 }]} placeholder="Share your experience…" placeholderTextColor={C.muted} multiline value={rev.comment} onChangeText={(t) => setRev((r) => ({ ...r, comment: t }))} />
+              <TouchableOpacity style={styles.submit} onPress={submitReview} disabled={rev.sending} activeOpacity={0.85}>
+                {rev.sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Post review</Text>}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.writeBtn} onPress={() => setRev((r) => ({ ...r, show: true }))} activeOpacity={0.85}>
+              <Ionicons name="create-outline" size={18} color={C.primary} />
+              <Text style={styles.writeText}>Write a review</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -155,4 +223,14 @@ const styles = StyleSheet.create({
   submitText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   ok: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#EAF8EF', borderRadius: R.md, padding: 14 },
   okText: { color: '#1C6B3A', flex: 1, fontSize: 14, fontWeight: '600' },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  ratingBig: { fontSize: 36, fontWeight: '800', color: C.text, letterSpacing: -1 },
+  ratingCount: { color: C.muted, fontSize: 12.5, marginTop: 3 },
+  revItem: { borderTopWidth: 1, borderTopColor: C.line, paddingVertical: 12 },
+  revTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  revName: { color: C.text, fontWeight: '700', fontSize: 14 },
+  revComment: { color: C.muted, fontSize: 13.5, marginTop: 4, lineHeight: 19 },
+  revFormLabel: { color: C.text, fontWeight: '700', fontSize: 13.5, marginBottom: 8 },
+  writeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: C.primary, borderRadius: R.md, height: 48, marginTop: 12 },
+  writeText: { color: C.primary, fontWeight: '700', fontSize: 14.5 },
 });

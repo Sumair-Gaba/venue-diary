@@ -21,6 +21,9 @@ export const api = {
   enquire: (slug, body) => fetch(BASE_URL + '/public/enquiry?slug=' + encodeURIComponent(slug), {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }).then((r) => r.json()),
+  review: (slug, body) => fetch(BASE_URL + '/public/review?slug=' + encodeURIComponent(slug), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json()),
 };
 
 // WhatsApp deep link (no + in the number), prefilled — same approach as the web.

@@ -13,6 +13,10 @@ import SavedScreen from './src/screens/SavedScreen';
 import VenueScreen from './src/screens/VenueScreen';
 import ReelsScreen from './src/screens/ReelsScreen';
 import MapScreen from './src/screens/MapScreen';
+import PlanningScreen from './src/screens/PlanningScreen';
+import BudgetScreen from './src/screens/BudgetScreen';
+import ChecklistScreen from './src/screens/ChecklistScreen';
+import CompareScreen from './src/screens/CompareScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { getUser } from './src/store';
 import { C } from './src/theme';
@@ -20,7 +24,7 @@ import { C } from './src/theme';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-const ICONS = { HomeTab: 'home', ExploreTab: 'search', SavedTab: 'heart' };
+const ICONS = { HomeTab: 'home', ExploreTab: 'search', SavedTab: 'heart', PlanningTab: 'sparkles' };
 
 function Tabs() {
   return (
@@ -39,6 +43,7 @@ function Tabs() {
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
       <Tab.Screen name="ExploreTab" component={ExploreScreen} options={{ title: 'Explore' }} />
       <Tab.Screen name="SavedTab" component={SavedScreen} options={{ title: 'Saved' }} />
+      <Tab.Screen name="PlanningTab" component={PlanningScreen} options={{ title: 'Planning' }} />
     </Tab.Navigator>
   );
 }
@@ -64,6 +69,9 @@ export default function App() {
             <Stack.Screen name="Venue" component={VenueScreen} />
             <Stack.Screen name="Reels" component={ReelsScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Map" component={MapScreen} />
+            <Stack.Screen name="Budget" component={BudgetScreen} />
+            <Stack.Screen name="Checklist" component={ChecklistScreen} />
+            <Stack.Screen name="Compare" component={CompareScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       ) : (
