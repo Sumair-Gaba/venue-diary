@@ -21,6 +21,9 @@ export const api = {
   enquire: (slug, body) => fetch(BASE_URL + '/public/enquiry?slug=' + encodeURIComponent(slug), {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }).then((r) => r.json()),
+  enquireBulk: (slugs, body) => fetch(BASE_URL + '/public/enquiries/bulk', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slugs, ...body }),
+  }).then((r) => r.json()),
   review: (slug, body) => fetch(BASE_URL + '/public/review?slug=' + encodeURIComponent(slug), {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }).then((r) => r.json()),
