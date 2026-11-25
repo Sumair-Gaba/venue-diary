@@ -14,6 +14,8 @@ export default function ExploreScreen({ navigation, route }) {
   const [areas, setAreas] = useState([]);
   const [q, setQ] = useState('');
   const [area, setArea] = useState('');
+  const [date, setDate] = useState('');
+  const [onlyAvail, setOnlyAvail] = useState(false);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -22,10 +24,10 @@ export default function ExploreScreen({ navigation, route }) {
   const deb = useRef(null);
   const inputRef = useRef(null);
 
-  const load = useCallback(async (p, query, ar) => {
+  const load = useCallback(async (p, query, ar, dt) => {
     setLoading(true);
     try {
-      const r = await api.venues({ q: query, area: ar, page: p });
+      const r = await api.venues({ q: query, area: ar, page: p, date: dt });
       setPages(r.pages); setTotal(r.total); setPage(r.page);
       setItems((cur) => (p === 1 ? r.items : [...cur, ...r.items]));
     } catch {} finally { setLoading(false); }
@@ -38,16 +40,26 @@ export default function ExploreScreen({ navigation, route }) {
     const p = route.params || {};
     const nq = p.q || ''; const na = p.area || '';
     setQ(nq); setArea(na);
-    load(1, nq, na);
+    load(1, nq, na, date);
     if (p.focus) setTimeout(() => inputRef.current?.focus(), 350);
   }, [route.params]); // eslint-disable-line
 
   const onSearch = (t) => {
     setQ(t);
     clearTimeout(deb.current);
-    deb.current = setTimeout(() => load(1, t, area), 300);
+    deb.current = setTimeout(() => load(1, t, area, date), 300);
   };
-  const pickArea = (a) => { setArea(a); load(1, q, a); };
+  const pickArea = (a) => { setArea(a); load(1, q, a, date); };
+  // Apply / clear a date to check availability. A valid date re-queries so the
+  // server annotates each venue as available / booked / unknown.
+  const applyDate = (t) => {
+    setDate(t);
+    if (!t || /^\d{4}-\d{2}-\d{2}$/.test(t)) {
+      clearTimeout(deb.current);
+      deb.current = setTimeout(() => load(1, q, area, t), 300);
+    }
+  };
+  const clearDate = () => { setDate(''); setOnlyAvail(false); load(1, q, area, ''); };
 
   const header = (
     <View style={styles.header}>
@@ -58,6 +70,17 @@ export default function ExploreScreen({ navigation, route }) {
         <TextInput ref={inputRef} style={styles.search} placeholder="Search by name…" placeholderTextColor={C.muted} value={q} onChangeText={onSearch} returnKeyType="search" />
         {!!q && <TouchableOpacity onPress={() => onSearch('')}><Ionicons name="close-circle" size={18} color={C.muted} /></TouchableOpacity>}
       </View>
+      <View style={styles.searchBox}>
+        <Ionicons name="calendar-outline" size={18} color={C.muted} />
+        <TextInput style={styles.search} placeholder="Check a date (e.g. 2026-12-15)" placeholderTextColor={C.muted} value={date} onChangeText={applyDate} keyboardType="numbers-and-punctuation" />
+        {!!date && <TouchableOpacity onPress={clearDate}><Ionicons name="close-circle" size={18} color={C.muted} /></TouchableOpacity>}
+      </View>
+      {!!date && /^\d{4}-\d{2}-\d{2}$/.test(date) && (
+        <TouchableOpacity style={[styles.availToggle, onlyAvail && styles.availToggleOn]} onPress={() => setOnlyAvail((x) => !x)} activeOpacity={0.8}>
+          <Ionicons name={onlyAvail ? 'checkbox' : 'square-outline'} size={18} color={onlyAvail ? '#fff' : C.primary} />
+          <Text style={[styles.availToggleText, onlyAvail && { color: '#fff' }]}>Only show available venues</Text>
+        </TouchableOpacity>
+      )}
       <FlatList
         data={[{ area: '', count: 0 }, ...areas]}
         horizontal
@@ -79,16 +102,24 @@ export default function ExploreScreen({ navigation, route }) {
     </View>
   );
 
+  const showAvail = !!date && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  const data = showAvail && onlyAvail ? items.filter((i) => i.availability === 'available') : items;
+  const availChip = (a) => {
+    if (a === 'available') return { label: 'Available', bg: 'rgba(28,107,58,0.92)' };
+    if (a === 'booked') return { label: 'Booked', bg: 'rgba(176,42,55,0.92)' };
+    return { label: 'Ask venue', bg: 'rgba(60,54,70,0.8)' };
+  };
+
   return (
     <View style={[styles.fill, { paddingTop: insets.top }]}>
       <FlatList
-        data={items}
+        data={data}
         keyExtractor={(it) => String(it.id)}
         numColumns={2}
         ListHeaderComponent={header}
         columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
         contentContainerStyle={{ gap: 12, paddingBottom: insets.bottom + 80 }}
-        onEndReached={() => { if (page < pages && !loading) load(page + 1, q, area); }}
+        onEndReached={() => { if (page < pages && !loading) load(page + 1, q, area, date); }}
         onEndReachedThreshold={1}
         ListFooterComponent={loading ? <ActivityIndicator color={C.primary} style={{ marginVertical: 20 }} /> : null}
         ListEmptyComponent={!loading ? <Text style={styles.empty}>No venues found.</Text> : null}
@@ -99,6 +130,11 @@ export default function ExploreScreen({ navigation, route }) {
               : <View style={[styles.cardImg, styles.noimg]}><Ionicons name="image-outline" size={26} color={C.muted} /></View>}
             {!!item.verified && (
               <View style={styles.vBadge}><Ionicons name="checkmark-circle" size={12} color="#fff" /><Text style={styles.vBadgeText}>Verified</Text></View>
+            )}
+            {showAvail && !!item.availability && (
+              <View style={[styles.aBadge, { backgroundColor: availChip(item.availability).bg }]}>
+                <Text style={styles.aBadgeText}>{availChip(item.availability).label}</Text>
+              </View>
             )}
             <View style={styles.cardBody}>
               <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
@@ -126,6 +162,11 @@ const styles = StyleSheet.create({
   card: { flex: 1, backgroundColor: C.card, borderRadius: R.md, overflow: 'hidden', borderWidth: 1, borderColor: C.line },
   vBadge: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(28,107,58,0.92)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999 },
   vBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  aBadge: { position: 'absolute', top: 8, right: 8, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  aBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  availToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: C.primary },
+  availToggleOn: { backgroundColor: C.primary },
+  availToggleText: { color: C.primary, fontSize: 13, fontWeight: '700' },
   cardImg: { width: '100%', height: 130, backgroundColor: C.paper },
   noimg: { alignItems: 'center', justifyContent: 'center' },
   cardBody: { padding: 10 },

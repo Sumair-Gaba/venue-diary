@@ -13,7 +13,7 @@ const qs = (o) => Object.entries(o)
   .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 
 export const api = {
-  venues: ({ q = '', area = '', page = 1, limit = 24 } = {}) => getJSON('/public/venues?' + qs({ q, area, page, limit })),
+  venues: ({ q = '', area = '', page = 1, limit = 24, date = '' } = {}) => getJSON('/public/venues?' + qs({ q, area, page, limit, date })),
   areas: () => getJSON('/public/areas'),
   reels: ({ page = 1, limit = 15 } = {}) => getJSON('/public/reels?' + qs({ page, limit })),
   near: ({ lat, lng, radius = 5 } = {}) => getJSON('/public/near?' + qs({ lat, lng, radius })),
