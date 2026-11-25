@@ -43,6 +43,8 @@ export default function ExploreScreen({ navigation, route }) {
   const [filters, setFilters] = useState(EMPTY);
   const [draft, setDraft] = useState(EMPTY);
   const [showFilters, setShowFilters] = useState(false);
+  const [showAreas, setShowAreas] = useState(false);
+  const [areaQuery, setAreaQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -102,26 +104,17 @@ export default function ExploreScreen({ navigation, route }) {
           {nActive > 0 && <View style={styles.fCount}><Text style={styles.fCountText}>{nActive}</Text></View>}
         </TouchableOpacity>
       </View>
-      <FlatList
-        data={[{ area: '', count: 0 }, ...areas]}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(it) => it.area || 'all'}
-        style={styles.chips}
-        contentContainerStyle={{ gap: 8, paddingRight: 16 }}
-        renderItem={({ item }) => {
-          const on = area === item.area;
-          return (
-            <TouchableOpacity style={[styles.chip, on && styles.chipOn]} onPress={() => pickArea(item.area)} activeOpacity={0.8}>
-              <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
-                {item.area ? `${item.area} (${item.count})` : 'All areas'}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      <TouchableOpacity style={styles.areaSel} onPress={() => { setAreaQuery(''); setShowAreas(true); }} activeOpacity={0.85}>
+        <Ionicons name="location-outline" size={17} color={C.primary} />
+        <Text style={[styles.areaSelText, !area && { color: C.muted }]} numberOfLines={1}>{area || 'All areas — tap to search'}</Text>
+        {area
+          ? <TouchableOpacity onPress={() => pickArea('')} hitSlop={10}><Ionicons name="close-circle" size={18} color={C.muted} /></TouchableOpacity>
+          : <Ionicons name="chevron-down" size={18} color={C.muted} />}
+      </TouchableOpacity>
     </View>
   );
+
+  const areaMatches = areas.filter((a) => a.area.toLowerCase().includes(areaQuery.trim().toLowerCase()));
 
   return (
     <View style={[styles.fill, { paddingTop: insets.top }]}>
@@ -223,6 +216,41 @@ export default function ExploreScreen({ navigation, route }) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showAreas} animationType="slide" transparent onRequestClose={() => setShowAreas(false)}>
+        <View style={styles.sheetWrap}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 10, height: '82%' }]}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Choose area</Text>
+              <TouchableOpacity onPress={() => setShowAreas(false)} hitSlop={8}><Ionicons name="close" size={24} color={C.muted} /></TouchableOpacity>
+            </View>
+            <View style={[styles.searchBox, { marginTop: 8 }]}>
+              <Ionicons name="search" size={18} color={C.muted} />
+              <TextInput style={styles.search} placeholder="Search area…" placeholderTextColor={C.muted} value={areaQuery} onChangeText={setAreaQuery} autoFocus />
+              {!!areaQuery && <TouchableOpacity onPress={() => setAreaQuery('')}><Ionicons name="close-circle" size={18} color={C.muted} /></TouchableOpacity>}
+            </View>
+            <FlatList
+              data={[{ area: '', count: 0 }, ...areaMatches]}
+              keyExtractor={(it) => it.area || 'all'}
+              keyboardShouldPersistTaps="handled"
+              style={{ marginTop: 10 }}
+              ListEmptyComponent={<Text style={styles.empty}>No area matches “{areaQuery}”.</Text>}
+              renderItem={({ item }) => {
+                const on = area === item.area;
+                return (
+                  <TouchableOpacity style={styles.areaRow} onPress={() => { pickArea(item.area); setShowAreas(false); }} activeOpacity={0.7}>
+                    <Text style={[styles.areaRowText, on && { color: C.primary, fontWeight: '800' }]}>{item.area || 'All areas'}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {!!item.area && <Text style={styles.areaRowCount}>{item.count}</Text>}
+                      {on && <Ionicons name="checkmark" size={18} color={C.primary} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -239,6 +267,11 @@ const styles = StyleSheet.create({
   filterBtnOn: { backgroundColor: C.primary, borderColor: C.primary },
   fCount: { position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   fCountText: { color: '#fff', fontSize: 10.5, fontWeight: '800' },
+  areaSel: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, height: 44, paddingHorizontal: 14, borderRadius: R.md, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
+  areaSelText: { flex: 1, color: C.text, fontSize: 14.5, fontWeight: '600' },
+  areaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line },
+  areaRowText: { color: C.text, fontSize: 15, fontWeight: '600' },
+  areaRowCount: { color: C.muted, fontSize: 13, fontWeight: '700' },
   chips: { marginTop: 14, marginHorizontal: -16, paddingHorizontal: 16 },
   chip: { paddingHorizontal: 14, height: 34, borderRadius: 999, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, justifyContent: 'center', maxWidth: 190 },
   chipOn: { backgroundColor: C.primary, borderColor: C.primary },
