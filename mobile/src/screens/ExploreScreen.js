@@ -224,7 +224,7 @@ export default function ExploreScreen({ navigation, route }) {
               <Text style={styles.sheetTitle}>Choose area</Text>
               <TouchableOpacity onPress={() => setShowAreas(false)} hitSlop={8}><Ionicons name="close" size={24} color={C.muted} /></TouchableOpacity>
             </View>
-            <View style={[styles.searchBox, { marginTop: 8 }]}>
+            <View style={[styles.searchBox, { flex: 0, alignSelf: 'stretch', marginTop: 8 }]}>
               <Ionicons name="search" size={18} color={C.muted} />
               <TextInput style={styles.search} placeholder="Search area…" placeholderTextColor={C.muted} value={areaQuery} onChangeText={setAreaQuery} autoFocus />
               {!!areaQuery && <TouchableOpacity onPress={() => setAreaQuery('')}><Ionicons name="close-circle" size={18} color={C.muted} /></TouchableOpacity>}
