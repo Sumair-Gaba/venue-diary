@@ -243,6 +243,11 @@ async function renderPublicVenue(slug, cached) {
         <div class="pub-sub">${esc([loc, cap].filter(Boolean).join(' · '))}${v.address ? `<br>${esc(v.address)}` : ''}</div>
         ${(v.facilities || []).length ? `<div class="chips">${v.facilities.map((f) => `<span class="chip on">${esc(f)}</span>`).join('')}</div>` : ''}
       </section>
+      ${v.claimable ? `<section class="pub-card pub-claim">
+        <div class="pub-claim-txt"><h2>Is this your venue?</h2>
+          <p class="pub-note">Claim this listing to manage your bookings, prices and photos — free. We'll verify your phone and review your request.</p></div>
+        <button class="btn btn-pri" id="pubClaim">${ic('i-home')}Claim this venue</button>
+      </section>` : ''}
       <div class="pub-gal">${carouselHTML(photos.map((m) => m.url), { h: 360, round: '16px' })}</div>
       <section class="pub-card"><h2>Pricing</h2>${priceTable}</section>
       ${(v.decor || []).length ? `<section class="pub-card"><h2>Decor &amp; Stage</h2>
@@ -268,6 +273,7 @@ async function renderPublicVenue(slug, cached) {
     <footer class="pub-foot">Powered by Venue Diary</footer>
   </div>`;
   $('#pubLogin').onclick = () => showOwnerLoginCard(slug, v);
+  if ($('#pubClaim')) $('#pubClaim').onclick = () => showClaimCard(slug, v);
   initCarousels('#login'); bindLightbox('#login');
   $('#eq_send').onclick = busy(async () => {
     const name = $('#eq_name').value.trim();
@@ -280,6 +286,73 @@ async function renderPublicVenue(slug, cached) {
     $('#enqBody').innerHTML = `<div class="ok">${ic('i-check')}Thank you! Your enquiry has been sent — ${esc(v.name)} will contact you soon.</div>`;
   });
 }
+// ---- owner-claim flow (public page → verify phone → submit claim) ----------
+// A directory listing can be claimed by its real owner. We verify the phone by
+// OTP (reusing the owner auth), then POST the claim for admin review.
+function showClaimCard(slug, v) {
+  $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
+    <div class="auth-logo">${ic('i-home')}</div>
+    <h2>Claim ${esc(v.name)}</h2>
+    <p class="auth-sub">Verify your phone to request this listing</p>
+    <div id="auth-step"></div>
+    <button class="linkbtn" id="backPub" style="margin-top:14px">← Back to venue page</button>
+  </div><div class="auth-foot">We'll review your request before handing over the dashboard.</div></div>`;
+  $('#backPub').onclick = () => renderPublicVenue(slug, v);
+  claimDetailsStep(slug, v);
+}
+function claimDetailsStep(slug, v, prefill = {}) {
+  $('#auth-step').innerHTML = `
+    <label class="fl">Your name <span class="req">*</span></label>
+    <input class="field" id="c_name" placeholder="Owner / manager name" value="${esc(prefill.name || '')}">
+    <label class="fl">Phone number <span class="req">*</span></label>
+    <input class="field" id="c_phone" placeholder="+92 3XX XXXXXXX" autocomplete="tel" value="${esc(prefill.phone || '')}">
+    <label class="fl">Note <span class="opt">(optional)</span></label>
+    <textarea class="field" id="c_note" placeholder="Anything that helps us verify you own this venue">${esc(prefill.note || '')}</textarea>
+    <button class="btn btn-pri" id="c_send" style="width:100%;margin-top:16px">Send code</button>`;
+  $('#c_send').onclick = busy(async () => {
+    const name = $('#c_name').value.trim(), phone = $('#c_phone').value.trim();
+    const note = $('#c_note').value.trim();
+    if (!name) return toast('Please enter your name');
+    if (!phone) return toast('Please enter a phone number');
+    const r = await api.post('auth/request-otp', { phone });
+    if (!r.ok) return toast(r.data.message || 'Could not send the code. Please try again.');
+    claimOtpStep(slug, v, { name, phone, note }, r.data.devCode);
+  });
+}
+function claimOtpStep(slug, v, info, devCode) {
+  $('#auth-step').innerHTML = `
+    <label class="fl">Enter the 4-digit code sent to ${esc(info.phone)}</label>
+    <input class="field otp-input" id="c_code" maxlength="4" inputmode="numeric" placeholder="----">
+    ${devCode ? `<div class="devcode">Dev mode — your code is <b>${devCode}</b></div>` : ''}
+    <button class="btn btn-pri" id="c_verify" style="width:100%;margin-top:16px">Verify &amp; submit claim</button>
+    <button class="btn btn-sec" id="c_back" style="width:100%;margin-top:8px">Back</button>`;
+  const code = $('#c_code'); code.focus();
+  code.onkeydown = (e) => { if (e.key === 'Enter') $('#c_verify').click(); };
+  $('#c_back').onclick = () => claimDetailsStep(slug, v, info);
+  $('#c_verify').onclick = busy(async () => {
+    if (!code.value.trim()) return toast('Please enter the 4-digit code');
+    const vr = await api.post('auth/verify', { phone: info.phone, code: code.value.trim(), name: info.name });
+    if (!vr.ok) return toast(vr.data.message || 'Invalid or expired code');
+    TOKEN = vr.data.token; localStorage.setItem('vd_token', TOKEN);
+    const cr = await api.post('claims', { slug, name: info.name, phone: info.phone, note: info.note });
+    if (!cr.ok) {
+      if (cr.status === 409) return claimDone(slug, v, 'owned');
+      return toast(cr.data.message || 'Could not submit your claim. Please try again.');
+    }
+    claimDone(slug, v, cr.data.resubmitted ? 'resubmitted' : 'submitted');
+  });
+}
+function claimDone(slug, v, kind) {
+  const msg = kind === 'owned'
+    ? `This venue has already been claimed. If you believe this is a mistake, please contact the admin (Echo DMC).`
+    : `Thank you! Your claim for <b>${esc(v.name)}</b> has been ${kind === 'resubmitted' ? 'updated' : 'submitted'}. We'll review it and, once approved, you can sign in as the owner to manage this venue.`;
+  $('#auth-step').innerHTML = `<div class="ok">${ic('i-check')}<span>${msg}</span></div>
+    <button class="btn btn-sec" id="c_toowner" style="width:100%;margin-top:16px">Go to owner sign-in</button>
+    <button class="btn btn-sec" id="c_topub" style="width:100%;margin-top:8px">Back to venue page</button>`;
+  $('#c_toowner').onclick = () => showOwnerLoginCard(slug, v);
+  $('#c_topub').onclick = () => renderPublicVenue(slug, v);
+}
+
 function phoneStep() {
   $('#auth-step').innerHTML = `
     <label class="fl">Phone number</label>
@@ -353,11 +426,13 @@ async function renderAdmin() {
   $('#app').hidden = true;
   const list = await api.get('admin/venues');
   if (!FEATURE_CAT) FEATURE_CAT = (await api.get('admin/features')).catalog || [];
+  const claims = (await api.get('admin/claims')) || [];
   const areas = [...new Set(list.map((v) => v.area).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $('#login').innerHTML = `<div class="admin-wrap">
     <div class="admin-top">
       <div class="brand"><span class="mk">${ic('i-cal')}</span><div><b>VENUE DIARY</b><span>ADMIN PANEL</span></div></div>
       <div class="admin-actions">
+        <button class="btn btn-sec" id="ad_claims">${ic('i-bell')}Claims${claims.length ? `<span class="badge-count">${claims.length}</span>` : ''}</button>
         <button class="btn btn-pri" id="ad_new">${ic('i-plus')}Register new banquet</button>
         <button class="btn btn-sec" id="ad_logout">${ic('i-logout')}Log out</button>
       </div>
@@ -376,6 +451,7 @@ async function renderAdmin() {
     </div></div>`;
   $('#ad_logout').onclick = () => { if (confirm('Log out?')) logout(); };
   $('#ad_new').onclick = registerBanquetModal;
+  $('#ad_claims').onclick = () => claimsModal(claims);
 
   const PER_PAGE = 30;
   let page = 1, q = '', area = '';
@@ -462,6 +538,45 @@ function manageFeaturesModal(v) {
     v.features = r.data.features; closeModal(); toast('Features updated'); renderAdmin();
   });
 }
+// Admin reviews owner-claim requests: approve (hand the venue over) or decline.
+function claimsModal(claims) {
+  const body = () => claims.length ? `<div class="claim-list">${claims.map((c) => `
+    <div class="claim-row" data-row="${c.id}">
+      <div class="claim-main">
+        <div class="claim-venue">${esc(c.venue_name)} <span class="mono">/${esc(c.slug)}</span></div>
+        <div class="vmeta">${ic('i-home')} ${esc(c.address || [c.area, c.city].filter(Boolean).join(', ') || '—')}</div>
+        <div class="vmeta">${ic('i-users')} ${esc(c.name || c.claimant_name || 'Owner')} · ${esc(c.phone || c.claimant_phone || '—')}</div>
+        ${c.note ? `<div class="vmeta claim-note">${ic('i-chat')} ${esc(c.note)}</div>` : ''}
+      </div>
+      <div class="claim-acts">
+        <button class="btn btn-pri btn-sm" data-ap="${c.id}">${ic('i-check')}Approve</button>
+        <button class="btn btn-sec btn-sm" data-rj="${c.id}">${ic('i-x')}Decline</button>
+      </div>
+    </div>`).join('')}</div>` : emptyState('i-check', 'No pending claims.');
+  modal('Venue claims',
+    `<div class="mono" style="margin-bottom:14px;color:var(--muted)">Owners who verified their phone and asked to manage a directory listing. Approving hands the venue over to them.</div>
+     <div id="claim-body">${body()}</div>`,
+    `<button class="btn btn-sec" id="cl_close">Close</button>`, 'wide');
+  // Refresh the admin panel (grid + Claims badge) once, when the modal closes,
+  // so any handed-over venue shows its new owner.
+  let changed = false;
+  $('#cl_close').onclick = () => { closeModal(); if (changed) renderAdmin(); };
+  const decide = (id, action) => busy(async () => {
+    const r = await api.post('admin/claims/' + id + '/' + action, {});
+    if (!r.ok) return toast(r.data.message || 'Could not update this claim. Please try again.');
+    toast(action === 'approve' ? 'Claim approved — venue handed over' : 'Claim declined');
+    changed = true;
+    const i = claims.findIndex((c) => c.id === id);
+    if (i >= 0) claims.splice(i, 1);
+    if (!claims.length) { closeModal(); renderAdmin(); return; }
+    $('#claim-body').innerHTML = body(); bind();
+  });
+  const bind = () => {
+    $('#claim-body').querySelectorAll('[data-ap]').forEach((b) => b.onclick = decide(Number(b.dataset.ap), 'approve'));
+    $('#claim-body').querySelectorAll('[data-rj]').forEach((b) => b.onclick = decide(Number(b.dataset.rj), 'reject'));
+  };
+  bind();
+}
 function registerBanquetModal() {
   modal('Register new banquet', `
     <div class="form-sec">Banquet</div>
@@ -530,13 +645,31 @@ function registerBanquetModal() {
     renderAdmin();
   });
 }
-// Owner whose banquet the admin hasn't created yet.
-function renderNoVenue() {
+// Owner whose banquet the admin hasn't created/handed over yet. If they have a
+// venue claim in progress, show its status instead of the generic notice.
+async function renderNoVenue() {
   $('#app').hidden = true;
+  let claims = [];
+  try { claims = await api.get('claims/mine'); } catch { claims = []; }
+  const pending = (claims || []).find((c) => c.status === 'pending');
+  const approved = (claims || []).find((c) => c.status === 'approved');
+  const rejected = (claims || []).find((c) => c.status === 'rejected');
+  let logo = 'i-home', title = 'Account pending setup', sub =
+    `Your banquet hasn't been set up yet. Please contact the admin (Echo DMC) — they'll create your dashboard for you.`;
+  if (pending) {
+    logo = 'i-bell'; title = 'Claim under review';
+    sub = `Your claim for <b>${esc(pending.venue_name)}</b> is being reviewed. Once approved, sign in here again to manage it.`;
+  } else if (approved) {
+    logo = 'i-check'; title = 'Claim approved';
+    sub = `Your claim for <b>${esc(approved.venue_name)}</b> was approved. Sign in at /${esc(approved.slug)} to open your dashboard.`;
+  } else if (rejected) {
+    logo = 'i-warn'; title = 'Claim not approved';
+    sub = `Your claim for <b>${esc(rejected.venue_name)}</b> wasn't approved. Please contact the admin (Echo DMC) if you think this is a mistake.`;
+  }
   $('#login').innerHTML = `<div class="auth-wrap"><div class="auth-card">
-    <div class="auth-logo">${ic('i-home')}</div>
-    <h2>Account pending setup</h2>
-    <p class="auth-sub">Your banquet hasn't been set up yet. Please contact the admin (Echo DMC) — they'll create your dashboard for you.</p>
+    <div class="auth-logo">${ic(logo)}</div>
+    <h2>${esc(title)}</h2>
+    <p class="auth-sub">${sub}</p>
     <button class="btn btn-sec" id="nv_logout" style="width:100%;margin-top:14px">Log out</button>
   </div></div>`;
   $('#nv_logout').onclick = logout;
