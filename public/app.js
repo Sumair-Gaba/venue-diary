@@ -64,6 +64,8 @@ function alertMsg(a) {
 const pill = (status) => `<span class="pill p-${status}"><span class="dt"></span>${cap(status)}</span>`;
 const kpi = (icon, n, label) => `<div class="kpi"><div class="ico">${ic(icon)}</div><div class="kmeta"><div class="n">${n}</div><div class="l">${label}</div></div></div>`;
 const emptyState = (icon, text) => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><span>${esc(text)}</span></div>`;
+// A claimed/owner-managed venue shows a "Verified" trust badge.
+const verifiedBadge = (on, sm) => on ? `<span class="verified${sm ? ' sm' : ''}" title="Owner-verified venue">${ic('i-check')}Verified</span>` : '';
 
 // ---- date-based flat pricing ---------------------------------------------
 // Banquets charge a flat complete price per hall+slot. Pricing rules adjust
@@ -239,7 +241,7 @@ async function renderPublicVenue(slug, cached) {
     </header>
     <div class="pub-wrap">
       <section class="pub-hero">
-        <h1>${esc(v.name)}</h1>
+        <h1>${esc(v.name)} ${verifiedBadge(v.verified)}</h1>
         <div class="pub-sub">${esc([loc, cap].filter(Boolean).join(' · '))}${v.address ? `<br>${esc(v.address)}` : ''}</div>
         ${(v.facilities || []).length ? `<div class="chips">${v.facilities.map((f) => `<span class="chip on">${esc(f)}</span>`).join('')}</div>` : ''}
       </section>
@@ -458,7 +460,7 @@ async function renderAdmin() {
   const card = (v) => `
     <div class="vcard">
       <div style="margin:-2px -2px 12px">${carouselHTML(v.photos, { h: 160, round: '12px 12px 0 0' })}</div>
-      <div class="vcard-h"><div class="vname">${esc(v.name)}</div><span class="pill p-confirmed"><span class="dt"></span>${v.hall_count} halls</span></div>
+      <div class="vcard-h"><div class="vname">${esc(v.name)} ${verifiedBadge(v.verified, true)}</div><span class="pill p-confirmed"><span class="dt"></span>${v.hall_count} halls</span></div>
       <div class="vmeta">${ic('i-home')} ${esc(v.address || [v.area, v.city].filter(Boolean).join(', ') || '—')}</div>
       <div class="vmeta">${ic('i-users')} ${esc(v.owner_name || 'Owner')} · ${esc(v.owner_phone || '—')}</div>
       <div class="vmeta">${ic('i-book')} ${v.booking_count} bookings</div>

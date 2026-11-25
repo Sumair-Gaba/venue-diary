@@ -97,6 +97,9 @@ export default function ExploreScreen({ navigation, route }) {
             {item.photos?.[0]
               ? <Image source={{ uri: item.photos[0] }} style={styles.cardImg} contentFit="cover" transition={150} />
               : <View style={[styles.cardImg, styles.noimg]}><Ionicons name="image-outline" size={26} color={C.muted} /></View>}
+            {!!item.verified && (
+              <View style={styles.vBadge}><Ionicons name="checkmark-circle" size={12} color="#fff" /><Text style={styles.vBadgeText}>Verified</Text></View>
+            )}
             <View style={styles.cardBody}>
               <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
               {!!item.area && <Text style={styles.cardArea} numberOfLines={1}>{item.area}</Text>}
@@ -121,6 +124,8 @@ const styles = StyleSheet.create({
   chipText: { color: C.text, fontSize: 13, fontWeight: '600' },
   chipTextOn: { color: '#fff' },
   card: { flex: 1, backgroundColor: C.card, borderRadius: R.md, overflow: 'hidden', borderWidth: 1, borderColor: C.line },
+  vBadge: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(28,107,58,0.92)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999 },
+  vBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   cardImg: { width: '100%', height: 130, backgroundColor: C.paper },
   noimg: { alignItems: 'center', justifyContent: 'center' },
   cardBody: { padding: 10 },

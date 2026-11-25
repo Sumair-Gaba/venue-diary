@@ -453,3 +453,8 @@ table.imp td{padding:3px}
 .claim-venue .mono{font-size:12px;color:var(--muted);font-weight:500}
 .claim-note{color:var(--ink-soft)}
 .claim-acts{display:flex;gap:8px;flex:none}
+
+/* verified (owner-managed) badge */
+.verified{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;padding:3px 9px;border-radius:999px;background:var(--ok-l);color:var(--ok);font-size:11.5px;font-weight:700;letter-spacing:.01em;line-height:1}
+.verified svg{width:12px;height:12px}
+.verified.sm{padding:2px 7px;font-size:10px}.verified.sm svg{width:10px;height:10px}

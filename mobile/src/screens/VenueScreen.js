@@ -89,6 +89,12 @@ export default function VenueScreen({ route, navigation }) {
 
         <View style={styles.body}>
           <Text style={styles.name}>{v.name || name}</Text>
+          {!!v.verified && (
+            <View style={styles.verified}>
+              <Ionicons name="checkmark-circle" size={14} color="#1C6B3A" />
+              <Text style={styles.verifiedText}>Verified venue</Text>
+            </View>
+          )}
           {!!loc && <View style={styles.row}><Ionicons name="location-sharp" size={15} color={C.primary} /><Text style={styles.loc}>{loc}</Text></View>}
           {!!v.address && <Text style={styles.addr}>{v.address}</Text>}
 
@@ -198,6 +204,8 @@ const styles = StyleSheet.create({
   heart: { position: 'absolute', right: 14, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
   body: { padding: 16 },
   name: { fontSize: 24, fontWeight: '800', color: C.text, letterSpacing: -0.4, lineHeight: 29 },
+  verified: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, marginTop: 8, backgroundColor: '#EAF8EF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  verifiedText: { color: '#1C6B3A', fontSize: 12, fontWeight: '800' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
   loc: { color: C.text, fontSize: 14.5, fontWeight: '600' },
   addr: { color: C.muted, fontSize: 13.5, marginTop: 5, lineHeight: 19 },
