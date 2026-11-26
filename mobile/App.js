@@ -17,6 +17,8 @@ import PlanningScreen from './src/screens/PlanningScreen';
 import BudgetScreen from './src/screens/BudgetScreen';
 import ChecklistScreen from './src/screens/ChecklistScreen';
 import CompareScreen from './src/screens/CompareScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import InboxScreen from './src/screens/InboxScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import * as Notifications from 'expo-notifications';
 import { getUser, ensureConsumer } from './src/store';
@@ -27,11 +29,12 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
 
-// A push can carry { slug, name } to deep-link straight to a venue on tap.
+// A push can deep-link on tap: { conversation_id } opens the chat thread;
+// { slug } opens a venue.
 function handleNotificationData(data) {
-  if (data?.slug && navigationRef.isReady()) {
-    navigationRef.navigate('Venue', { slug: data.slug, name: data.name });
-  }
+  if (!navigationRef.isReady()) return;
+  if (data?.conversation_id) navigationRef.navigate('Chat', { conversationId: data.conversation_id, venueName: data.name });
+  else if (data?.slug) navigationRef.navigate('Venue', { slug: data.slug, name: data.name });
 }
 
 const ICONS = { HomeTab: 'home', ExploreTab: 'search', SavedTab: 'heart', PlanningTab: 'sparkles' };
@@ -90,6 +93,8 @@ export default function App() {
           <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
             <Stack.Screen name="Tabs" component={Tabs} />
             <Stack.Screen name="Venue" component={VenueScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Inbox" component={InboxScreen} />
             <Stack.Screen name="Reels" component={ReelsScreen} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Map" component={MapScreen} />
             <Stack.Screen name="Budget" component={BudgetScreen} />

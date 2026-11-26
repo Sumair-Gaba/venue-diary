@@ -680,6 +680,7 @@ async function renderNoVenue() {
 // ---- router ---------------------------------------------------------------
 async function route() {
   const [, page, arg] = (location.hash || '#/home').split('/');
+  if (page !== 'messages') clearMsgPoll();   // stop chat polling when leaving Messages
   // Gate disabled optional modules — the admin controls these per banquet.
   if (OPTIONAL_FEATURES.includes(page) && !featureOn(page)) {
     toast('This feature is turned off for your dashboard.');
@@ -690,6 +691,10 @@ async function route() {
     if (page === 'calendar') return await renderCalendar();
     if (page === 'bookings') return await renderBookings();
     if (page === 'leads') return await renderLeads();
+    if (page === 'messages') {
+      if (!featureOn('chat')) { toast('This feature is turned off for your dashboard.'); location.hash = '#/home'; return; }
+      return await renderMessages(arg);
+    }
     if (page === 'payments') return await renderPayments();
     if (page === 'calculator') return await renderCalculator();
     if (page === 'import') return await renderImport();
@@ -1194,6 +1199,65 @@ async function renderLeads() {
     if (!confirm('Delete this enquiry?')) return;
     await api.del('leads/' + b.dataset.del); toast('Deleted'); renderLeads();
   });
+}
+
+// ---- Messages (in-app chat with customers) ----
+let MSG_POLL = null;
+function clearMsgPoll() { if (MSG_POLL) { clearInterval(MSG_POLL); MSG_POLL = null; } }
+
+async function renderMessages(convId) {
+  setNav('messages');
+  clearMsgPoll();
+  if (convId) return renderMessageThread(Number(convId));
+  const list = await api.get('conversations');
+  $('#view').innerHTML = `<div class="page-h"><div><h1>Messages</h1><div class="sub">Chat with customers — all in one place</div></div></div>
+    ${list.length ? list.map((c) => `
+      <div class="card pad lead-card msg-row" data-conv="${c.id}" style="cursor:pointer">
+        <div class="lead-h"><div><div class="nm">${esc(c.consumer_name || 'Customer')}${c.consumer_phone ? ` · <span class="muted">${esc(c.consumer_phone)}</span>` : ''}</div>
+          <div class="sub">${c.last_sender === 'owner' ? 'You: ' : ''}${esc(c.last_message || 'New conversation')}</div></div>
+          ${c.unread > 0 ? `<span class="pill p-tentative"><span class="dt"></span>${c.unread} new</span>` : ''}</div>
+      </div>`).join('') : emptyState('i-chat', 'No messages yet. Customers who message you from the app appear here.')}`;
+  $('#view').querySelectorAll('[data-conv]').forEach((r) => r.onclick = () => { location.hash = '#/messages/' + r.dataset.conv; });
+}
+
+async function renderMessageThread(convId) {
+  const draw = async () => {
+    const r = await api.get('conversations/' + convId + '/messages');
+    const msgs = (r && r.messages) || [];
+    const box = $('#msgBox');
+    if (box) {
+      box.innerHTML = msgs.map((m) => {
+        const mine = m.sender === 'owner';
+        return `<div style="display:flex;justify-content:${mine ? 'flex-end' : 'flex-start'};margin:4px 0">
+          <div style="max-width:72%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.4;
+            ${mine ? 'background:var(--pri,#A6324F);color:#fff;border-bottom-right-radius:4px' : 'background:#f2f2f2;color:#1a1a1a;border-bottom-left-radius:4px'}">${esc(m.body)}</div>
+        </div>`;
+      }).join('') || '<div class="muted" style="text-align:center;padding:30px">No messages yet.</div>';
+      box.scrollTop = box.scrollHeight;
+    }
+  };
+  $('#view').innerHTML = `
+    <div class="page-h"><div><button class="btn btn-sec btn-sm" id="msgBack">${ic('i-link')}Back to messages</button></div></div>
+    <div class="card" style="display:flex;flex-direction:column;height:62vh">
+      <div id="msgBox" style="flex:1;overflow-y:auto;padding:14px"></div>
+      <div style="display:flex;gap:8px;padding:12px;border-top:1px solid #eee">
+        <input class="field" id="msgInput" placeholder="Type a reply…" style="flex:1" autocomplete="off">
+        <button class="btn btn-pri" id="msgSend">Send</button>
+      </div>
+    </div>`;
+  $('#msgBack').onclick = () => { location.hash = '#/messages'; };
+  const input = $('#msgInput'), send = $('#msgSend');
+  const doSend = async () => {
+    const body = input.value.trim(); if (!body) return;
+    input.value = ''; send.disabled = true;
+    try { await api.post('conversations/' + convId + '/messages', { body }); await draw(); }
+    catch { toast('Could not send. Please try again.'); }
+    finally { send.disabled = false; input.focus(); }
+  };
+  send.onclick = doSend;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSend(); } };
+  await draw();
+  MSG_POLL = setInterval(draw, 5000);   // live-refresh the open thread
 }
 
 // ---- Booking detail ----

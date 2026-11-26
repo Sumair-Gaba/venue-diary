@@ -99,10 +99,10 @@ export default function VenueScreen({ route, navigation }) {
           {!!v.address && <Text style={styles.addr}>{v.address}</Text>}
 
           <View style={styles.actionsRow}>
-            <TouchableOpacity style={[styles.btn, styles.btnWa]} activeOpacity={0.85}
-              onPress={() => Linking.openURL(v.phone ? waLink(v.phone, waText) : mapsUrl)}>
-              <Ionicons name="logo-whatsapp" size={18} color="#fff" />
-              <Text style={styles.btnText}>WhatsApp</Text>
+            <TouchableOpacity style={[styles.btn, styles.btnMsg]} activeOpacity={0.85}
+              onPress={() => navigation.navigate('Chat', { slug, venueName: v.name || name })}>
+              <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+              <Text style={styles.btnText}>Message</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.btn, styles.btnSec]} activeOpacity={0.85} onPress={() => Linking.openURL(mapsUrl)}>
               <Ionicons name="map" size={17} color={C.primary} />
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   addr: { color: C.muted, fontSize: 13.5, marginTop: 5, lineHeight: 19 },
   actionsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
   btn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, height: 46, borderRadius: R.md },
-  btnWa: { backgroundColor: C.wa },
+  btnMsg: { backgroundColor: C.primary },
   btnSec: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 14.5 },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },

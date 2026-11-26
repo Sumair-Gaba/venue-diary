@@ -40,6 +40,10 @@ export const consumerApi = {
   favourites: (deviceId) => fetch(BASE_URL + '/consumer/favourites', { headers: { 'X-Device-Id': deviceId } }).then((r) => r.json()),
   addFav: (deviceId, slug) => fetch(BASE_URL + '/consumer/favourites', { method: 'POST', headers: devHeaders(deviceId), body: JSON.stringify({ slug }) }).then((r) => r.json()),
   removeFav: (deviceId, slug) => fetch(BASE_URL + '/consumer/favourites/' + encodeURIComponent(slug), { method: 'DELETE', headers: { 'X-Device-Id': deviceId } }).then((r) => r.json()),
+  // In-app chat (keeps conversations on the platform — no WhatsApp leak).
+  conversations: (deviceId) => fetch(BASE_URL + '/consumer/conversations', { headers: { 'X-Device-Id': deviceId } }).then((r) => r.json()),
+  messages: (deviceId, convId) => fetch(BASE_URL + '/consumer/conversations/' + convId + '/messages', { headers: { 'X-Device-Id': deviceId } }).then((r) => r.json()),
+  sendMessage: (deviceId, body) => fetch(BASE_URL + '/consumer/conversations', { method: 'POST', headers: devHeaders(deviceId), body: JSON.stringify(body) }).then((r) => r.json()),
 };
 
 // WhatsApp deep link (no + in the number), prefilled — same approach as the web.

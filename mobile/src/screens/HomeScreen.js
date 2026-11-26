@@ -66,7 +66,12 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.loc}>{user?.city || 'Karachi'}, Pakistan</Text>
             </View>
           </View>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'G').trim().charAt(0).toUpperCase()}</Text></View>
+          <View style={styles.headActions}>
+            <TouchableOpacity style={styles.iconBtn} activeOpacity={0.8} onPress={() => navigation.navigate('Inbox')}>
+              <Ionicons name="chatbubble-ellipses-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'G').trim().charAt(0).toUpperCase()}</Text></View>
+          </View>
         </View>
         <Text style={styles.tagline}>Find your perfect venue ✨</Text>
         <TouchableOpacity style={styles.search} activeOpacity={0.9} onPress={() => openExplore({ focus: true })}>
@@ -214,6 +219,8 @@ const styles = StyleSheet.create({
   hello: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
   locRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
   loc: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5 },
+  headActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
   avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 18 },
   tagline: { color: '#fff', fontSize: 15, fontWeight: '600', marginTop: 18, opacity: 0.95 },
