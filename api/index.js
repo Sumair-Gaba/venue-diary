@@ -33,10 +33,12 @@ export default async function handler(req, res) {
     const h = req.headers['authorization'] || '';
     body.__token = h.startsWith('Bearer ') ? h.slice(7) : null;
     body.__venueOverride = req.headers['x-venue-id'] || null;
+    body.__ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
 
     const { status, data } = await handleApi({ method: req.method, segs, query: url.searchParams, body });
     res.status(status).json(data);
   } catch (e) {
-    res.status(500).json({ error: 'SERVER_ERROR', message: e.message });
+    console.error('[api]', e);
+    res.status(500).json({ error: 'SERVER_ERROR', message: 'Something went wrong. Please try again.' });
   }
 }

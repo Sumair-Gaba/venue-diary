@@ -54,10 +54,11 @@ http.createServer(async (req, res) => {
       const h = req.headers['authorization'] || '';
       body.__token = h.startsWith('Bearer ') ? h.slice(7) : null;
       body.__venueOverride = req.headers['x-venue-id'] || null;
+      body.__ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
       const segs = url.pathname.replace(/^\/api\//, '').split('/').filter(Boolean);
       const { status, data } = await handleApi({ method: req.method, segs, query: url.searchParams, body });
       return sendJson(res, status, data);
     }
     serveStatic(res, url.pathname);
-  } catch (e) { sendJson(res, 500, { error: 'SERVER_ERROR', message: e.message }); }
+  } catch (e) { console.error('[api]', e); sendJson(res, 500, { error: 'SERVER_ERROR', message: 'Something went wrong. Please try again.' }); }
 }).listen(PORT, () => console.log(`\n  Venue Diary running →  http://localhost:${PORT}\n`));
