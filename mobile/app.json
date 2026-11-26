@@ -31,6 +31,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Venue Diary uses your location to show banquets near you on the map."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#A6324F"
+        }
       ]
     ],
     "extra": {

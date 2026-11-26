@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 import { useCallback, useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -18,11 +18,21 @@ import BudgetScreen from './src/screens/BudgetScreen';
 import ChecklistScreen from './src/screens/ChecklistScreen';
 import CompareScreen from './src/screens/CompareScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import * as Notifications from 'expo-notifications';
 import { getUser, ensureConsumer } from './src/store';
+import { registerForPush } from './src/push';
 import { C } from './src/theme';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
+
+// A push can carry { slug, name } to deep-link straight to a venue on tap.
+function handleNotificationData(data) {
+  if (data?.slug && navigationRef.isReady()) {
+    navigationRef.navigate('Venue', { slug: data.slug, name: data.name });
+  }
+}
 
 const ICONS = { HomeTab: 'home', ExploreTab: 'search', SavedTab: 'heart', PlanningTab: 'sparkles' };
 
@@ -54,7 +64,17 @@ export default function App() {
 
   useEffect(() => {
     getUser().then((u) => { setHasUser(!!u); setReady(true); });
-    ensureConsumer();   // register device account + pull synced favourites (best-effort)
+    // Register the device account first, then the push token (it attaches to it).
+    ensureConsumer().then(() => registerForPush());
+
+    // Deep-link when a notification is tapped (app running or cold-started).
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      handleNotificationData(resp?.notification?.request?.content?.data);
+    });
+    Notifications.getLastNotificationResponseAsync().then((resp) => {
+      if (resp) handleNotificationData(resp.notification?.request?.content?.data);
+    });
+    return () => sub.remove();
   }, []);
   const done = useCallback(() => setHasUser(true), []);
 
@@ -66,7 +86,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       {hasUser ? (
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
             <Stack.Screen name="Tabs" component={Tabs} />
             <Stack.Screen name="Venue" component={VenueScreen} />
