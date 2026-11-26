@@ -30,6 +30,17 @@ export const api = {
   }).then((r) => r.json()),
 };
 
+// Consumer (device-based) account API. The device id goes in X-Device-Id; there
+// is no password/OTP. Drives cloud-synced favourites + (later) Expo push.
+const devHeaders = (deviceId) => ({ 'Content-Type': 'application/json', 'X-Device-Id': deviceId });
+export const consumerApi = {
+  register: (deviceId, body) => fetch(BASE_URL + '/consumer/register', { method: 'POST', headers: devHeaders(deviceId), body: JSON.stringify(body || {}) }).then((r) => r.json()),
+  update: (deviceId, body) => fetch(BASE_URL + '/consumer', { method: 'PATCH', headers: devHeaders(deviceId), body: JSON.stringify(body || {}) }).then((r) => r.json()),
+  favourites: (deviceId) => fetch(BASE_URL + '/consumer/favourites', { headers: { 'X-Device-Id': deviceId } }).then((r) => r.json()),
+  addFav: (deviceId, slug) => fetch(BASE_URL + '/consumer/favourites', { method: 'POST', headers: devHeaders(deviceId), body: JSON.stringify({ slug }) }).then((r) => r.json()),
+  removeFav: (deviceId, slug) => fetch(BASE_URL + '/consumer/favourites/' + encodeURIComponent(slug), { method: 'DELETE', headers: { 'X-Device-Id': deviceId } }).then((r) => r.json()),
+};
+
 // WhatsApp deep link (no + in the number), prefilled — same approach as the web.
 export const waLink = (phone, text) =>
   `https://wa.me/${String(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;

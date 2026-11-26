@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     // Tokens travel in the Authorization header (not cookies), so `*` is safe.
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Venue-Id');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Venue-Id, X-Device-Id');
     if (req.method === 'OPTIONS') return res.status(204).end();
 
     const url = new URL(req.url, `https://${req.headers.host}`);
@@ -33,6 +33,7 @@ export default async function handler(req, res) {
     const h = req.headers['authorization'] || '';
     body.__token = h.startsWith('Bearer ') ? h.slice(7) : null;
     body.__venueOverride = req.headers['x-venue-id'] || null;
+    body.__device = req.headers['x-device-id'] || null;
     body.__ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
 
     const { status, data } = await handleApi({ method: req.method, segs, query: url.searchParams, body });

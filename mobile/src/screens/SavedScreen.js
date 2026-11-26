@@ -7,7 +7,7 @@ import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TextInput,
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getFavs, getUser } from '../store';
+import { getFavs, syncFavs, getUser } from '../store';
 import { api } from '../api';
 import { C, R } from '../theme';
 
@@ -22,7 +22,9 @@ export default function SavedScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => {
     let on = true;
-    getFavs().then((f) => { if (!on) return; setFavs(f); setSel(new Set(f.map((x) => x.slug))); });
+    // Show the cached list instantly, then refresh from the backend (sync).
+    getFavs().then((f) => { if (on) { setFavs(f); setSel(new Set(f.map((x) => x.slug))); } });
+    syncFavs().then((f) => { if (on) { setFavs(f); setSel(new Set(f.map((x) => x.slug))); } });
     return () => { on = false; };
   }, []));
   useEffect(() => { getUser().then((u) => setForm((f) => ({ ...f, name: u?.name && u.name !== 'Guest' ? u.name : '' }))); }, []);

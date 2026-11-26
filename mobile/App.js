@@ -18,7 +18,7 @@ import BudgetScreen from './src/screens/BudgetScreen';
 import ChecklistScreen from './src/screens/ChecklistScreen';
 import CompareScreen from './src/screens/CompareScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
-import { getUser } from './src/store';
+import { getUser, ensureConsumer } from './src/store';
 import { C } from './src/theme';
 
 const Tab = createBottomTabNavigator();
@@ -52,7 +52,10 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [hasUser, setHasUser] = useState(false);
 
-  useEffect(() => { getUser().then((u) => { setHasUser(!!u); setReady(true); }); }, []);
+  useEffect(() => {
+    getUser().then((u) => { setHasUser(!!u); setReady(true); });
+    ensureConsumer();   // register device account + pull synced favourites (best-effort)
+  }, []);
   const done = useCallback(() => setHasUser(true), []);
 
   if (!ready) {
