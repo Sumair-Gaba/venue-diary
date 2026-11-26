@@ -27,6 +27,7 @@ export default function HomeScreen({ navigation }) {
   const [reels, setReels] = useState([]);
   const [popular, setPopular] = useState([]);
   const [areas, setAreas] = useState([]);
+  const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const insets = useSafeAreaInsets();
 
@@ -35,11 +36,12 @@ export default function HomeScreen({ navigation }) {
     (async () => {
       const u = await getUser(); if (on) setUser(u);
       try {
-        const [r, v, a] = await Promise.all([api.reels({ limit: 12 }), api.venues({ page: 1, limit: 10 }), api.areas()]);
+        const [r, v, a, dl] = await Promise.all([api.reels({ limit: 12 }), api.venues({ page: 1, limit: 10 }), api.areas(), api.deals({ limit: 20 })]);
         if (!on) return;
         setReels(r.items || []);
         setPopular(v.items || []);
         setAreas((a || []).slice(0, 12));
+        setDeals(Array.isArray(dl) ? dl : []);
       } catch {} finally { if (on) setLoading(false); }
     })();
     return () => { on = false; };
@@ -94,6 +96,42 @@ export default function HomeScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={22} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
+
+      {/* App-only deals — the download hook */}
+      {deals.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>🎁 App-only deals</Text>
+          </View>
+          <FlatList
+            data={deals}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(it) => 'd' + it.id}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.deal}
+                activeOpacity={item.slug ? 0.85 : 1}
+                onPress={() => item.slug && openVenue({ slug: item.slug, name: item.venue_name })}
+              >
+                <LinearGradient colors={[C.primaryDark, C.primary]} style={styles.dealGrad}>
+                  <View style={styles.dealTop}>
+                    <View style={styles.appOnly}><Text style={styles.appOnlyText}>APP ONLY</Text></View>
+                    {!!item.badge && <Text style={styles.dealBadge}>{item.badge}</Text>}
+                  </View>
+                  <Text style={styles.dealTitle} numberOfLines={2}>{item.title}</Text>
+                  {!!item.description && <Text style={styles.dealDesc} numberOfLines={2}>{item.description}</Text>}
+                  <View style={styles.dealFoot}>
+                    <Text style={styles.dealVenue} numberOfLines={1}>{item.venue_name || 'All venues'}</Text>
+                    {!!item.valid_until && <Text style={styles.dealTill}>till {item.valid_until}</Text>}
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      )}
 
       {/* Venue Reels */}
       {reels.length > 0 && (
@@ -199,6 +237,17 @@ const styles = StyleSheet.create({
   noimg: { alignItems: 'center', justifyContent: 'center' },
   pname: { color: C.text, fontWeight: '700', fontSize: 13.5 },
   parea: { color: C.muted, fontSize: 12, marginTop: 2 },
+  deal: { width: 250, borderRadius: R.md, overflow: 'hidden' },
+  dealGrad: { padding: 14, height: 140, justifyContent: 'space-between' },
+  dealTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  appOnly: { backgroundColor: C.gold, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  appOnlyText: { color: '#3a2a00', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.5 },
+  dealBadge: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  dealTitle: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  dealDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, lineHeight: 17 },
+  dealFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dealVenue: { color: C.gold, fontSize: 12.5, fontWeight: '700', flex: 1 },
+  dealTill: { color: 'rgba(255,255,255,0.75)', fontSize: 11 },
   areaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, marginTop: 12 },
   areaChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.paper, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 13, borderWidth: 1, borderColor: C.line, maxWidth: 200 },
   areaText: { color: C.text, fontSize: 13, fontWeight: '600', flexShrink: 1 },
