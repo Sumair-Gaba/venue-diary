@@ -11,3 +11,6 @@ venue-local.db*
 
 # Downloaded data exports (OSM/Overpass venue imports) — can be large
 data/*.json
+
+.vercel
+.env*
