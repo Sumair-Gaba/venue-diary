@@ -106,13 +106,14 @@ export default function HomeScreen({ navigation, onLogout }) {
           {/* Today's events list */}
           <Text style={styles.sectionH}>Today’s events</Text>
           {(dash?.todays || []).length ? dash.todays.map((b) => (
-            <View key={b.id} style={styles.eventRow}>
+            <TouchableOpacity key={b.id} style={styles.eventRow} activeOpacity={0.85} onPress={() => navigation.navigate('BookingDetail', { id: b.id })}>
               <View style={styles.eventDot} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.eventName}>{b.customer_name}</Text>
                 <Text style={styles.eventMeta}>{[b.hall_name, b.slot_name, b.event_type].filter(Boolean).join(' · ')}</Text>
               </View>
-            </View>
+              <Ionicons name="chevron-forward" size={18} color={C.muted} />
+            </TouchableOpacity>
           )) : <Text style={styles.muted}>No events today.</Text>}
         </View>
       )}

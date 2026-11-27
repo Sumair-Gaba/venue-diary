@@ -5,6 +5,13 @@ import { getToken, clearToken } from './store';
 
 export const BASE_URL = 'https://venue-diary-two.vercel.app/api';
 
+// Build a ?key=value query string from a params object (skips empty values).
+function qs(params) {
+  if (!params) return '';
+  const pairs = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
+  return pairs.length ? '?' + pairs.map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&') : '';
+}
+
 async function req(method, path, body) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
@@ -31,6 +38,15 @@ export const api = {
   venue: () => req('GET', 'venue'),
   leads: () => req('GET', 'leads'),
   setLeadStatus: (id, status) => req('PATCH', 'leads/' + id, { status }),
+  // bookings (the diary)
+  bookings: (params) => req('GET', 'bookings' + qs(params)),
+  booking: (id) => req('GET', 'bookings/' + id),
+  createBooking: (body) => req('POST', 'bookings', body),
+  checkSlot: (body) => req('POST', 'check', body),
+  confirmBooking: (id) => req('POST', 'bookings/' + id + '/confirm'),
+  completeBooking: (id) => req('POST', 'bookings/' + id + '/complete'),
+  cancelBooking: (id, reason) => req('POST', 'bookings/' + id + '/cancel', { reason }),
+  addPayment: (id, body) => req('POST', 'bookings/' + id + '/payments', body),
   // chat
   conversations: () => req('GET', 'conversations'),
   messages: (id) => req('GET', 'conversations/' + id + '/messages'),

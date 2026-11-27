@@ -10,6 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import BookingsScreen from './src/screens/BookingsScreen';
+import BookingDetailScreen from './src/screens/BookingDetailScreen';
+import NewBookingScreen from './src/screens/NewBookingScreen';
 import LeadsScreen from './src/screens/LeadsScreen';
 import MessagesScreen from './src/screens/MessagesScreen';
 import ChatScreen from './src/screens/ChatScreen';
@@ -21,7 +24,7 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
 
-const ICONS = { HomeTab: 'home', LeadsTab: 'megaphone', MessagesTab: 'chatbubbles' };
+const ICONS = { HomeTab: 'home', DiaryTab: 'calendar', LeadsTab: 'megaphone', MessagesTab: 'chatbubbles' };
 
 // A push can deep-link: { conversation_id } → chat; { kind:'lead' } → leads tab.
 function handleNotificationData(data) {
@@ -46,6 +49,9 @@ function Tabs({ onLogout }) {
     >
       <Tab.Screen name="HomeTab" options={{ title: 'Home' }}>
         {(props) => <HomeScreen {...props} onLogout={onLogout} />}
+      </Tab.Screen>
+      <Tab.Screen name="DiaryTab" options={{ title: 'Diary' }}>
+        {(props) => <BookingsScreen {...props} onLogout={onLogout} />}
       </Tab.Screen>
       <Tab.Screen name="LeadsTab" options={{ title: 'Enquiries' }}>
         {(props) => <LeadsScreen {...props} onLogout={onLogout} />}
@@ -90,6 +96,8 @@ export default function App() {
               {(props) => <Tabs {...props} onLogout={onLogout} />}
             </Stack.Screen>
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
+            <Stack.Screen name="NewBooking" component={NewBookingScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       ) : (
