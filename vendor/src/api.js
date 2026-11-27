@@ -52,4 +52,16 @@ export const api = {
   conversations: () => req('GET', 'conversations'),
   messages: (id) => req('GET', 'conversations/' + id + '/messages'),
   sendMessage: (id, body) => req('POST', 'conversations/' + id + '/messages', { body }),
+  // manage the banquet (edit profile / halls / slots / rates / media)
+  updateVenue: (body) => req('PATCH', 'venue', body),
+  addHall: (body) => req('POST', 'halls', body),
+  updateHall: (id, body) => req('PATCH', 'halls/' + id, body),
+  deleteHall: (id) => req('DELETE', 'halls/' + id),
+  addSlot: (body) => req('POST', 'slots', body),
+  deleteSlot: (id) => req('DELETE', 'slots/' + id),
+  addRate: (body) => req('POST', 'rates', body),
+  deleteRate: (id) => req('DELETE', 'rates/' + id),
+  media: () => req('GET', 'media'),
+  addMedia: (body) => req('POST', 'media', body),
+  deleteMedia: (id) => req('DELETE', 'media/' + id),
 };

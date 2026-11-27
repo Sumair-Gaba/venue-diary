@@ -59,6 +59,11 @@ export default function HomeScreen({ navigation, onLogout }) {
               <Ionicons name="notifications-outline" size={22} color="#fff" />
               {alerts > 0 && <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{alerts > 9 ? '9+' : alerts}</Text></View>}
             </TouchableOpacity>
+            {hasVenue && (
+              <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Manage')} hitSlop={8}>
+                <Ionicons name="settings-outline" size={21} color="#fff" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.iconBtn} onPress={async () => { await clearToken(); onLogout?.(); }} hitSlop={8}>
               <Ionicons name="log-out-outline" size={22} color="#fff" />
             </TouchableOpacity>
