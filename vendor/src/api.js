@@ -35,6 +35,7 @@ export const api = {
   setPushToken: (push_token) => req('PATCH', 'me', { push_token }),
   // dashboard + leads
   dashboard: () => req('GET', 'dashboard'),
+  notifications: () => req('GET', 'notifications'),
   venue: () => req('GET', 'venue'),
   leads: () => req('GET', 'leads'),
   setLeadStatus: (id, status) => req('PATCH', 'leads/' + id, { status }),

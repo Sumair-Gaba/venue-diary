@@ -16,6 +16,7 @@ import NewBookingScreen from './src/screens/NewBookingScreen';
 import LeadsScreen from './src/screens/LeadsScreen';
 import MessagesScreen from './src/screens/MessagesScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 import { getToken } from './src/store';
 import { registerForPush } from './src/push';
 import { C } from './src/theme';
@@ -98,6 +99,7 @@ export default function App() {
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
             <Stack.Screen name="NewBooking" component={NewBookingScreen} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       ) : (

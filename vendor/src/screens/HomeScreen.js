@@ -17,17 +17,19 @@ export default function HomeScreen({ navigation, onLogout }) {
   const [dash, setDash] = useState(null);
   const [leadNew, setLeadNew] = useState(0);
   const [msgUnread, setMsgUnread] = useState(0);
+  const [alerts, setAlerts] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
 
   const load = useCallback(async () => {
     try {
-      const [meR, dR, lR, cR] = await Promise.all([api.me(), api.dashboard(), api.leads(), api.conversations()]);
+      const [meR, dR, lR, cR, nR] = await Promise.all([api.me(), api.dashboard(), api.leads(), api.conversations(), api.notifications()]);
       setMe(meR.data || null);
       setDash(dR.data || null);
       setLeadNew(Array.isArray(lR.data) ? lR.data.filter((l) => l.status === 'new').length : 0);
       setMsgUnread(Array.isArray(cR.data) ? cR.data.reduce((s, c) => s + (c.unread || 0), 0) : 0);
+      setAlerts(Array.isArray(nR.data) ? nR.data.length : 0);
     } catch (e) { if (e.unauthorized) onLogout?.(); }
     finally { setLoading(false); setRefreshing(false); }
   }, [onLogout]);
@@ -52,9 +54,15 @@ export default function HomeScreen({ navigation, onLogout }) {
             <Text style={styles.greet}>{greet} 👋</Text>
             <Text style={styles.name}>{me?.name || 'Partner'}</Text>
           </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={async () => { await clearToken(); onLogout?.(); }} hitSlop={8}>
-            <Ionicons name="log-out-outline" size={22} color="#fff" />
-          </TouchableOpacity>
+          <View style={styles.headActions}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')} hitSlop={8}>
+              <Ionicons name="notifications-outline" size={22} color="#fff" />
+              {alerts > 0 && <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{alerts > 9 ? '9+' : alerts}</Text></View>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={async () => { await clearToken(); onLogout?.(); }} hitSlop={8}>
+              <Ionicons name="log-out-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
       </LinearGradient>
 
@@ -128,7 +136,10 @@ const styles = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   greet: { color: 'rgba(255,255,255,0.85)', fontSize: 14 },
   name: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.4, marginTop: 2 },
-  logoutBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  headActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  bellBadge: { position: 'absolute', top: 2, right: 2, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5, borderColor: C.primaryDark },
+  bellBadgeText: { color: C.dark, fontSize: 10, fontWeight: '900' },
   pending: { alignItems: 'center', justifyContent: 'center', gap: 8, padding: 36, marginTop: 40 },
   pendingText: { color: C.text, fontSize: 18, fontWeight: '700' },
   pendingSub: { color: C.muted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
