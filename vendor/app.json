@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.venuedekho.partner",
-      "versionCode": 2
+      "versionCode": 3
     },
     "plugins": [
       "expo-image",
