@@ -8,11 +8,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { api } from '../api';
 import { C, R } from '../theme';
 
 const fmt = (n) => 'Rs ' + Number(n || 0).toLocaleString('en-IN');
-const TABS = [['profile', 'Profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates']];
+const TABS = [['profile', 'Profile'], ['halls', 'Halls'], ['slots', 'Slots'], ['rates', 'Rates'], ['media', 'Photos']];
 
 export default function ManageScreen({ navigation }) {
   const [venue, setVenue] = useState(null);
@@ -57,9 +60,70 @@ export default function ManageScreen({ navigation }) {
           {tab === 'halls' && <Halls venue={venue} reload={load} insets={insets} />}
           {tab === 'slots' && <Slots venue={venue} reload={load} insets={insets} />}
           {tab === 'rates' && <Rates venue={venue} reload={load} insets={insets} />}
+          {tab === 'media' && <Media insets={insets} />}
         </>
       )}
     </View>
+  );
+}
+
+// ---------- Media (photos) ----------
+function Media({ insets }) {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try { const r = await api.media(); setItems(Array.isArray(r.data) ? r.data : []); } catch { setItems([]); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const pickAndUpload = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return Alert.alert('Permission needed', 'Please allow photo access to add photos.');
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
+      if (res.canceled || !res.assets?.length) return;
+      setBusy(true);
+      // Resize + compress so the base64 fits comfortably within the request limit.
+      const manip = await ImageManipulator.manipulateAsync(
+        res.assets[0].uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      const r = await api.directUpload({ data: manip.base64, contentType: 'image/jpeg', kind: 'image' });
+      if (r.ok) load();
+      else Alert.alert('Upload failed', r.data?.message || 'Please try again.');
+    } catch { Alert.alert('Upload failed', 'Please try again.'); }
+    finally { setBusy(false); }
+  };
+
+  const del = (m) => Alert.alert('Remove photo', 'Remove this photo?', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: async () => { const r = await api.deleteMedia(m.id); if (r.ok) load(); } },
+  ]);
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 12 }}>
+      <Text style={styles.hint}>Photos shown on your public page and in the app.</Text>
+      <TouchableOpacity style={styles.addBtn} onPress={pickAndUpload} disabled={busy} activeOpacity={0.85}>
+        {busy ? <ActivityIndicator color="#fff" /> : <><Ionicons name="cloud-upload-outline" size={18} color="#fff" /><Text style={styles.addBtnText}>Add photo</Text></>}
+      </TouchableOpacity>
+      {items === null ? (
+        <ActivityIndicator color={C.primary} style={{ marginTop: 16 }} />
+      ) : items.length === 0 ? (
+        <View style={styles.mediaEmpty}><Ionicons name="images-outline" size={44} color={C.line} /><Text style={styles.muted}>No photos yet</Text></View>
+      ) : (
+        <View style={styles.mediaGrid}>
+          {items.map((m) => (
+            <View key={m.id} style={styles.mediaCell}>
+              <Image source={{ uri: m.url }} style={styles.mediaImg} contentFit="cover" transition={150} />
+              {m.kind === 'video' && <View style={styles.vidTag}><Ionicons name="videocam" size={13} color="#fff" /></View>}
+              <TouchableOpacity style={styles.mediaDel} onPress={() => del(m)} hitSlop={6}><Ionicons name="close" size={15} color="#fff" /></TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
@@ -291,4 +355,10 @@ const styles = StyleSheet.create({
   addCard: { backgroundColor: C.card, borderRadius: R.md, padding: 14, borderWidth: 1, borderColor: C.line, gap: 10, marginTop: 6 },
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: C.primary, borderRadius: 12, paddingVertical: 13 },
   addBtnText: { color: '#fff', fontWeight: '800', fontSize: 14.5 },
+  mediaEmpty: { alignItems: 'center', justifyContent: 'center', gap: 8, padding: 40 },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  mediaCell: { width: '31.5%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
+  mediaImg: { width: '100%', height: '100%' },
+  vidTag: { position: 'absolute', left: 6, bottom: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  mediaDel: { position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
 });

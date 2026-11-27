@@ -91,7 +91,9 @@ export default function BookingDetailScreen({ route, navigation }) {
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>Booking</Text>
-        <View style={{ width: 24 }} />
+        {b && b.status !== 'cancelled' ? (
+          <TouchableOpacity onPress={() => navigation.navigate('EditBooking', { booking: b })} hitSlop={10}><Ionicons name="create-outline" size={23} color="#fff" /></TouchableOpacity>
+        ) : <View style={{ width: 24 }} />}
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 30, gap: 14 }}>

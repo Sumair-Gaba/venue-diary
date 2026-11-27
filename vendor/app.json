@@ -22,6 +22,12 @@
         {
           "color": "#A6324F"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Venue Dekho Partner to access your photos so you can add photos of your banquet."
+        }
       ]
     ],
     "extra": {

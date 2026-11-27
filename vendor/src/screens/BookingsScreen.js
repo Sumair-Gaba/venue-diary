@@ -48,10 +48,15 @@ export default function BookingsScreen({ navigation, onLogout }) {
     <View style={[styles.fill, { paddingTop: insets.top + 8 }]}>
       <View style={styles.top}>
         <Text style={styles.h1}>Diary</Text>
-        <TouchableOpacity style={styles.addTop} activeOpacity={0.85} onPress={() => navigation.navigate('NewBooking')}>
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.addTopText}>New</Text>
-        </TouchableOpacity>
+        <View style={styles.topActions}>
+          <TouchableOpacity style={styles.calBtn} activeOpacity={0.85} onPress={() => navigation.navigate('Calendar')} hitSlop={6}>
+            <Ionicons name="calendar-outline" size={20} color={C.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addTop} activeOpacity={0.85} onPress={() => navigation.navigate('NewBooking')}>
+            <Ionicons name="add" size={20} color="#fff" />
+            <Text style={styles.addTopText}>New</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchWrap}>
@@ -125,6 +130,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 8 },
   h1: { fontSize: 26, fontWeight: '800', color: C.text, letterSpacing: -0.4 },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  calBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FDEEF2', alignItems: 'center', justifyContent: 'center' },
   addTop: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.primary, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
   addTopText: { color: '#fff', fontWeight: '800', fontSize: 13.5 },
   searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14, backgroundColor: C.paper, borderRadius: 14, borderWidth: 1, borderColor: C.line, paddingHorizontal: 14, height: 46 },

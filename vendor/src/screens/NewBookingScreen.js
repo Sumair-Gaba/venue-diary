@@ -14,7 +14,7 @@ import { C, R } from '../theme';
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s + 'T00:00:00'));
 
-export default function NewBookingScreen({ navigation }) {
+export default function NewBookingScreen({ navigation, route }) {
   const [venue, setVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,7 +22,7 @@ export default function NewBookingScreen({ navigation }) {
   // form
   const [hall, setHall] = useState(null);
   const [slot, setSlot] = useState(null);
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(route?.params?.date || todayISO());
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [eventType, setEventType] = useState('');

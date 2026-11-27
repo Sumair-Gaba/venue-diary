@@ -18,6 +18,8 @@ import MessagesScreen from './src/screens/MessagesScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import ManageScreen from './src/screens/ManageScreen';
+import EditBookingScreen from './src/screens/EditBookingScreen';
+import CalendarScreen from './src/screens/CalendarScreen';
 import { getToken } from './src/store';
 import { registerForPush } from './src/push';
 import { C } from './src/theme';
@@ -102,6 +104,8 @@ export default function App() {
             <Stack.Screen name="NewBooking" component={NewBookingScreen} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
             <Stack.Screen name="Manage" component={ManageScreen} />
+            <Stack.Screen name="EditBooking" component={EditBookingScreen} />
+            <Stack.Screen name="Calendar" component={CalendarScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       ) : (

@@ -43,7 +43,9 @@ export const api = {
   bookings: (params) => req('GET', 'bookings' + qs(params)),
   booking: (id) => req('GET', 'bookings/' + id),
   createBooking: (body) => req('POST', 'bookings', body),
+  updateBooking: (id, body) => req('PATCH', 'bookings/' + id, body),
   checkSlot: (body) => req('POST', 'check', body),
+  calendar: (params) => req('GET', 'calendar' + qs(params)),
   confirmBooking: (id) => req('POST', 'bookings/' + id + '/confirm'),
   completeBooking: (id) => req('POST', 'bookings/' + id + '/complete'),
   cancelBooking: (id, reason) => req('POST', 'bookings/' + id + '/cancel', { reason }),
@@ -63,5 +65,6 @@ export const api = {
   deleteRate: (id) => req('DELETE', 'rates/' + id),
   media: () => req('GET', 'media'),
   addMedia: (body) => req('POST', 'media', body),
+  directUpload: (body) => req('POST', 'media/direct', body),
   deleteMedia: (id) => req('DELETE', 'media/' + id),
 };
